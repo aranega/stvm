@@ -6,10 +6,25 @@ from functools import lru_cache, wraps
 import itertools
 
 
-ObjectHeader = namedtuple(
-    "ObjectHeader",
-    "class_index is_immutable remaining_bits_3 object_format is_pinned is_grey is_remembered identity_hash is_marked remaining_bits number_of_slots",
-)
+object_types = {}
+
+
+class ObjectHeader(object):
+    def __init__(self, class_index, is_immutable, remaining_bits_3, object_format, is_pinned, is_grey, is_remembered, identity_hash, is_marked, remaining_bits, number_of_slots):
+        self.class_index = class_index
+        self.is_immutable = is_immutable
+        self.remaining_bits_3 = remaining_bits_3
+        self.object_format = object_format
+        self.is_pinned = is_pinned
+        self.is_grey = is_grey
+        self.is_remembered = is_remembered
+        self.identity_hash = identity_hash
+        self.is_marked = is_marked
+        self.remaining_bits = remaining_bits
+        self.number_of_slots = number_of_slots
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}{vars(self)}"
 
 
 @unique
@@ -53,10 +68,33 @@ class AddressType(Enum):
     OBJECT = 0
     SMALLINT = 1
     CHAR = 2
-    SMALLFLOAT = 3
+    SMALLINT_2 = 3
+    SMALLFLOAT = 4
 
 
 class SpurObject(Sequence):
+    @staticmethod
+    def create(address, from_cls, memory):
+        nb_slots = from_cls.inst_size
+        object_format = from_cls.inst_format
+        header = ObjectHeader(
+            class_index=from_cls.header.identity_hash,
+            is_immutable=from_cls.header.is_immutable,
+            remaining_bits_3=False,
+            object_format=object_format,
+            is_pinned=False,
+            is_grey=False,
+            is_remembered=False,
+            identity_hash=None,
+            is_marked=False,
+            remaining_bits=False,
+            number_of_slots=nb_slots,
+        )
+        instance = object_types[object_format](header, address, memory)
+        instance.header.identity_hash = id(instance)
+        return instance
+
+
     def __init__(self, header, address, memory, nb_slots=None):
         self.header = header
         self.object_format = ObjectFormat(header.object_format)
@@ -89,6 +127,10 @@ class SpurObject(Sequence):
         return self[2].value & 0xFFFF
 
     @property
+    def inst_format(self):
+        return (self[2].value & 0xFFFF0000) >> 16
+
+    @property
     def next_object(self):
         new_object_address = self.end_address + 8
         new_object_header = self.memory._decode_header(new_object_address)
@@ -111,7 +153,8 @@ class SpurObject(Sequence):
         return len(self.slots)
 
 
-object_types = {}
+def create_instance(address, for_cls, memory):
+    return SpurObject.create(address, for_cls, memory)
 
 
 def register_for(o):
@@ -375,10 +418,10 @@ class Memory(object):
     @lru_cache()
     def __getitem__(self, address, class_table=False):
         raw = address
-        if isinstance(address, bytes):
+        if isinstance(address, (bytes, bytearray)):
             address = int.from_bytes(address, "little")
 
-        if self.address_points_to(address) is AddressType.SMALLINT:
+        if self.address_points_to(address) in (AddressType.SMALLINT, AddressType.SMALLINT_2):
             return ImmediateInteger(raw, self)
         if self.address_points_to(address) is AddressType.CHAR:
             return ImmediateChar(raw)

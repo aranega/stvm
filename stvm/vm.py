@@ -1,5 +1,5 @@
 from functools import lru_cache
-from .image_reader32 import Image
+from .image_reader32 import Image, create_instance
 
 
 class VM(object):
@@ -14,6 +14,7 @@ class VM(object):
             self.image = Image(bytearray(f.read()))
             self.mem = self.image.mem
             self.image_file = image_file
+            self.memory_allocator = MemoryAllocator(self.mem)
 
     def execute(self):
         self.current_context = self.initial_context()
@@ -36,6 +37,19 @@ class VM(object):
         method = context.instvars[3]
         cm = CompiledMethod(method.bytecode, method.literals, method)
         return Context(compiled_method=cm, receiver=context.instvars[5], vm=self)
+
+
+class MemoryAllocator(object):
+    def __init__(self, memory):
+        self.memory = memory
+        self.first_address = 1 << 3
+
+
+    def allocate(self, from_cls):
+        address = self.first_address
+        instance = create_instance(address, from_cls.obj, self.memory)
+        self.first_address = instance.end_address
+        return vmobject(instance)
 
 
 class Continuate(Exception):
@@ -107,12 +121,10 @@ class Context(object):
                 execution_finished = True
                 print("Finishing on exception", self)
                 raise
-            except AttributeError as e:
-                import ipdb
-
-                ipdb.set_trace()
-
+            except KeyError as e:
                 print("problem", self.compiled_method.raw_bytecode[self.pc])
+                import ipdb; ipdb.set_trace()
+                
                 self.vm.current_context = None  # HACK
                 raise e
             except Continuate:

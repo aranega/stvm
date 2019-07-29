@@ -255,10 +255,8 @@ class PerformNew(Bytecode):
     def execute(self, context):
         cls = context.pop()
         print("Perform new for", cls)
-        import ipdb
-
-        ipdb.set_trace()
-
+        inst = context.vm.memory_allocator.allocate(cls)
+        context.push(inst)
         context.pc += 1
 
 
