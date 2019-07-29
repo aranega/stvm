@@ -3,6 +3,7 @@ from collections import namedtuple
 from collections.abc import Sequence
 from enum import Enum, unique
 from functools import lru_cache, wraps
+import itertools
 
 
 ObjectHeader = namedtuple(
@@ -86,19 +87,6 @@ class SpurObject(Sequence):
     @property
     def inst_size(self):
         return self[2].value & 0xFFFF
-
-    @property
-    def extra_headers(self):
-        if len(self) < 0xFF:
-            return tuple()
-        headers = []
-        address = self.address
-        header = self.memory._decode_header(address)
-        while header.number_of_slots == 0xFF:
-            address = address - 4
-            header = self.memory._decode_header(address)
-            headers.append(header)
-        return headers
 
     @property
     def next_object(self):
@@ -337,21 +325,27 @@ class MemoryFragment(Sequence):
 class Memory(object):
     class InnerMemory(object):
         def __init__(self, image_header, raw):
-            self.raw = raw
+            self.raw_image = raw
+            self.raw_young = memoryview(b'\x00' * image_header.old_base_address)
             self.image_header = image_header
             self.old_base_address = self.image_header.old_base_address
 
         def __getitem__(self, i):
             offset = self.old_base_address
             if isinstance(i, slice):
-                return self.raw[i.start - offset : i.stop - offset : i.step]
-            return self.raw[i - offset]
-
-        def __len__(self):
-            return len(self.raw)
+                if i.start < self.old_base_address:
+                    return self.raw_young[i.start : i.stop : i.step]
+                return self.raw_image[i.start - offset : i.stop - offset : i.step]
+            if i < self.old_base_address:
+                return self.raw_young[i]
+            return self.raw_image[i - offset]
 
         def __iter__(self):
-            return iter(self.raw)
+            return itertools.chain(iter(self.raw_young), iter(self.raw_image))
+
+        def __len__(self):
+            return len(self.raw_image) + len(self.raw_young)
+
 
     def __init__(self, image_header, raw):
         self.raw = Memory.InnerMemory(image_header, raw)
@@ -434,7 +428,7 @@ class Image(object):
     header_format = "IIIIIIII"
 
     def __init__(self, raw):
-        self.raw = raw
+        self.raw = memoryview(raw)
         header_size = struct.calcsize(self.header_format)
         self.header = ImageHeader._make(
             struct.unpack(self.header_format, raw[:header_size])
