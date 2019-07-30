@@ -5,4 +5,4 @@ vm = VM()
 # vm.open_image("tmp/Pharo.image")
 vm.open_image("Pharo.image")
 
-# vm.execute()
+vm.execute()

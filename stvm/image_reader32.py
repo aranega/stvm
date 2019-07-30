@@ -23,6 +23,21 @@ class ObjectHeader(object):
         self.remaining_bits = remaining_bits
         self.number_of_slots = number_of_slots
 
+    def encode(self):
+        f = self.class_index
+        f |= 0x400000 if self.remaining_bits_3 else 0
+        f |= 0x600000 if self.is_immutable else 0
+        f |= self.object_format << 24
+        f |= 0x20000000 if self.is_remembered else 0
+        f |= 0x40000000 if self.is_pinned else 0
+        f |= 0x60000000 if self.is_grey else 0
+
+        g = self.identity_hash & 0x3FFFFF
+        g |= 0x400000 if self.remaining_bits else 0
+        g |= 0x600000 if self.is_marked else 0
+        g |= self.number_of_slots << 24
+        return (f, g)
+
     def __repr__(self):
         return f"{self.__class__.__name__}{vars(self)}"
 
@@ -90,8 +105,10 @@ class SpurObject(Sequence):
             remaining_bits=False,
             number_of_slots=nb_slots,
         )
+        header.identity_hash = id(header)
+        encoded_header = header.encode()
+        memory[address: address + 8] = struct.pack('II', *encoded_header)
         instance = object_types[object_format](header, address, memory)
-        instance.header.identity_hash = id(instance)
         return instance
 
 
@@ -282,13 +299,13 @@ class CompiledMethod(SpurObject):
         num_literals = method_format & 0x7FFF
         self.initial_pc = (num_literals + 1) * 4
 
-        self.raw = self.raw[4:]
         if method_format & 0x10000:
             primitive = self.raw[self.initial_pc + 1] + (
                 self.raw[self.initial_pc + 2] << 8
             )
         else:
             primitive = 0
+        self.raw = self.raw[4:]
 
         self.method_header = CompiledMethodHeader(
             sign_flag=method_format < 0,

@@ -109,8 +109,51 @@ class ReturnReceiver(Bytecode):
 @register_bytecode([124])
 class Return(Bytecode):
     def execute(self, context):
-        print("Result", context.peek())
-        raise Finish
+        result = context.pop()
+        print("Result", result)
+        return result
+
+
+@register_bytecode([[129, 130]])
+class OperationLongForm(Bytecode):
+    operation = ['peek', 'pop']
+    def execute(self, context):
+        compiled_method = context.compiled_method
+        target_encoded = compiled_method.raw_bytecode[context.pc + 1]
+        target = (target_encoded & 0xC0) >> 6
+        index = target_encoded & 0x3F
+        value = getattr(context, self.operation[self.opcode - 129])()
+        if target == 3:  # into literal variable
+            literal_association = context.compiled_method.literals[index]
+            literal_association.instvars[1] = value.obj
+        elif target == 2:
+            print('Cover me!')
+            import ipdb; ipdb.set_trace()
+        elif target == 1:  # temporary location
+            context.temporaries[index] = value
+        else:  # receiver variable
+            context.receiver.obj.instvars[index] = value.obj
+        context.pc += 2
+
+
+@register_bytecode([133])
+class SuperSend(Bytecode):
+    def execute(self, context):
+        frmt = context.compiled_method.obj.bytecode[context.pc + 1]
+        literal_index = frmt & 0xF0 >> 4
+        nb_args = frmt & 0xF
+        args = []
+        for i in range(nb_args):
+            args = context.pop()
+        receiver = context.pop()
+        selector = context.compiled_method.literals[literal_index]
+
+        compiled_method = receiver.class_.superclass.lookup(selector)
+        new_context = Context(
+            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=args
+        )
+        context.pc += 2
+        raise Continuate()
 
 
 @register_bytecode([135])
@@ -261,7 +304,7 @@ class PerformNew(Bytecode):
 
 
 @register_bytecode([[208, 223]])
-class SendSelector(Bytecode):
+class Send0ArgSelector(Bytecode):
     def execute(self, context):
         literal_index = self.opcode - 208
         receiver = context.pop()
@@ -269,6 +312,39 @@ class SendSelector(Bytecode):
         compiled_method = receiver.class_.lookup(selector)
         new_context = Context(
             compiled_method=compiled_method, receiver=receiver, previous_context=context
+        )
+
+        context.pc += 1
+        raise Continuate()
+
+
+@register_bytecode([[224, 239]])
+class Send1ArgSelector(Bytecode):
+    def execute(self, context):
+        literal_index = self.opcode - 224
+        arg = context.pop()
+        receiver = context.pop()
+        selector = context.compiled_method.literals[literal_index]
+        compiled_method = receiver.class_.lookup(selector)
+        new_context = Context(
+            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=[arg]
+        )
+        print('Preparing', selector.as_text(), 'for execution')
+        context.pc += 1
+        raise Continuate()
+
+
+@register_bytecode([[240, 255]])
+class Send2ArgSelector(Bytecode):
+    def execute(self, context):
+        literal_index = self.opcode - 240
+        arg1 = context.pop()
+        arg2 = context.pop()
+        receiver = context.pop()
+        selector = context.compiled_method.literals[literal_index]
+        compiled_method = receiver.class_.lookup(selector)
+        new_context = Context(
+            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=[arg1, arg]
         )
 
         context.pc += 1

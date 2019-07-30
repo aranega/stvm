@@ -84,11 +84,12 @@ class Context(object):
             previous_context.next_context = self
             self.vm = previous_context.vm
         self.receiver = receiver
-        self.args = args
         self.compiled_method = compiled_method
         self.temporaries = [
             self.vm.mem.nil
         ] * compiled_method.obj.method_header.num_temps
+        if args:
+            self.temporaries[:len(args)] = [vmobject(a) for a in args]
         self.pc = initial_pc
 
     def push(self, value):
@@ -106,7 +107,7 @@ class Context(object):
         while not execution_finished:
             try:
                 bytecode = self.compiled_method.preevaluate(self.pc)
-                print("   PC", self.pc, bytecode)
+                print(f"   PC {self.pc}[{hex(bytecode.opcode)}]", bytecode)
                 result = bytecode.execute(self)
                 if result is not None:
                     print("intermediate result", result)
@@ -124,8 +125,6 @@ class Context(object):
             except KeyError as e:
                 print("problem", self.compiled_method.raw_bytecode[self.pc])
                 import ipdb; ipdb.set_trace()
-                
-                self.vm.current_context = None  # HACK
                 raise e
             except Continuate:
                 print("Stoping this execution for another", self)
