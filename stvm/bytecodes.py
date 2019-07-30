@@ -191,14 +191,14 @@ def default_primitive(context, selector):
     raise Continuate()
 
 
-@register_bytecode([144, 151])
+@register_bytecode([[144, 151]])
 class Jump(Bytecode):
     def execute(self, context):
         jump_pc = self.opcode - 143
         context.pc += jump_pc
 
 
-@register_bytecode([152, 159])
+@register_bytecode([[152, 159]])
 class JumpFalse(Bytecode):
     def execute(self, context):
         result = context.pop()
@@ -206,10 +206,10 @@ class JumpFalse(Bytecode):
             jump_pc = self.opcode - 151
             context.pc += jump_pc
         else:
-            context_pc += 2
+            context.pc += 2
 
 
-@register_bytecode([160, 163])
+@register_bytecode([[160, 163]])
 class LongJumpBackward(Bytecode):
     def execute(self, context):
         shift = (self.opcode - 160) * 256
@@ -218,7 +218,7 @@ class LongJumpBackward(Bytecode):
         context.pc -= jump_pc
 
 
-@register_bytecode([164, 167])
+@register_bytecode([[164, 167]])
 class LongJumpForward(Bytecode):
     def execute(self, context):
         shift = (self.opcode - 164) * 256
@@ -240,7 +240,7 @@ class LongJumpTrue(Bytecode):
             context.pc += 2
 
 
-@register_bytecode([172, 175])
+@register_bytecode([[172, 175]])
 class LongJumpFalse(Bytecode):
     def execute(self, context):
         result = context.pop()
