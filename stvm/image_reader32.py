@@ -375,6 +375,15 @@ class MemoryFragment(Sequence):
         address = self.slots[index]
         return self.memory[bytes(address)]
 
+    def __setitem__(self, i, item):
+        if isinstance(i, slice):
+            raise NotImplementedError()
+        if isinstance(item, (ImmediateChar, ImmediateInteger)):
+            struct.pack_into("I", self.slots[i], 0, item)
+            return
+        struct.pack_into("I", self.slots[i], 0, item.address)
+
+
     def __iter__(self):
         return iter((self[i] for i in range(len(self))))
 
@@ -386,7 +395,7 @@ class Memory(object):
     class InnerMemory(object):
         def __init__(self, image_header, raw):
             self.raw_image = raw
-            self.raw_young = memoryview(b'\x00' * image_header.old_base_address)
+            self.raw_young = memoryview(bytearray(b'\x00') * image_header.old_base_address)
             self.image_header = image_header
             self.old_base_address = self.image_header.old_base_address
 
@@ -399,6 +408,23 @@ class Memory(object):
             if i < self.old_base_address:
                 return self.raw_young[i]
             return self.raw_image[i - offset]
+
+        def __setitem__(self, i, item):
+            if isinstance(i, slice):
+                if i.start < self.old_base_address:
+                    self.raw_young[i] = item
+                    return
+                self.raw_image[i.start - offset : i.stop - offset : i.step] = item
+                return
+            if i < self.old_base_address:
+                self.raw_young[i] = item
+                return
+            self.raw_image[i - offset] = item
+
+            if isinstance(item, (ImmediateChar, ImmediateInteger)):
+                struct.pack_into("I", self.slots[i], 0, item)
+                return
+            struct.pack_into("I", self.slots[i], 0, item.address)
 
         def __iter__(self):
             return itertools.chain(iter(self.raw_young), iter(self.raw_image))
@@ -448,6 +474,9 @@ class Memory(object):
             return ClassTable(header, address, self)
         clazz = object_types.get(header.object_format, SpurObject)
         return clazz(header, address, self)
+
+    def __setitem__(self, i, item):
+        self.raw.__setitem__(i, item)
 
     @property
     def nil(self):
