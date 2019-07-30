@@ -1,5 +1,5 @@
 from .vm import Continuate, Finish, VM, Context, vmobject
-from .image_reader32 import ImmediateInteger
+from .primitives import execute_primitive, build_int
 
 
 def register_bytecode(l):
@@ -82,15 +82,6 @@ class PushSpecialObject(Bytecode):
         context.pc += 1
 
 
-def build_int(value, memory):
-    immediate = ImmediateInteger(memory=memory)
-    immediate.value = value
-    value <<= 1
-    value &= 0xFFFFFFFE
-    immediate.address = value
-    return immediate
-
-
 @register_bytecode([[116, 119]])
 class PushInt(Bytecode):
     def execute(self, context):
@@ -171,9 +162,13 @@ class DuplicateTopStack(Bytecode):
 
 
 @register_bytecode([139])
-class Nop(Bytecode):
+class CallPrimitive(Bytecode):
     def execute(self, context):
-        context.pc += 1
+        pc = context.pc
+        primitive_number = int.from_bytes(context.compiled_method.obj.bytecode[pc + 1 : pc + 3], 'little')
+        result = execute_primitive(primitive_number, context)
+        context.pc += 3
+        return vmobject(result)
 
 
 def default_primitive(context, selector):
@@ -256,12 +251,11 @@ class LongJumpFalse(Bytecode):
 @register_bytecode([176])
 class PerformPlus(Bytecode):
     def execute(self, context):
-        op1 = context.pop()
-        op2 = context.pop()
-        res = build_int(op1.obj.value + op2.obj.value, context.vm.mem)
-        context.push(vmobject(res))
-        print("    == ", res.value)
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '+', args=[arg])
         context.pc += 1
+        raise Continuate()
 
 
 @register_bytecode([178])
@@ -293,14 +287,37 @@ class PerformDoubleTilde(Bytecode):
         context.pc += 1
 
 
+@register_bytecode([198])
+class PerformDoubleEqual(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '==', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
 @register_bytecode([204])
 class PerformNew(Bytecode):
     def execute(self, context):
         cls = context.pop()
         print("Perform new for", cls)
-        inst = context.vm.memory_allocator.allocate(cls)
-        context.push(inst)
+        # default_execute(context, cls, 'new')
+        prepare_new_context(context, cls, 'basicNew')
+        # inst = context.vm.memory_allocator.allocate(cls)
+        # prepare_new_context(context, inst, 'initialize')
         context.pc += 1
+        raise Continuate()
+
+
+def prepare_new_context(context, receiver, selector, args=None):
+    compiled_method = receiver.class_.lookup_byname(selector)
+    new_context = Context(
+        compiled_method=compiled_method,
+        receiver=receiver,
+        previous_context=context,
+        args=args
+    )
 
 
 @register_bytecode([[208, 223]])

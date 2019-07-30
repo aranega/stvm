@@ -17,13 +17,16 @@ class VM(object):
             self.memory_allocator = MemoryAllocator(self.mem)
 
     def execute(self):
-        self.current_context = self.initial_context()
-        while self.current_context is not None:
-            try:
-                self.current_context.execute()
-                self.current_context = self.current_context.previous_context
-            except Continuate:
-                self.current_context = self.current_context.next_context
+        try:
+            self.current_context = self.initial_context()
+            while self.current_context is not None:
+                try:
+                    self.current_context.execute()
+                    self.current_context = self.current_context.previous_context
+                except Continuate:
+                    self.current_context = self.current_context.next_context
+        except Quit:
+            print('Evaluation finished')
 
     @property
     def first_active_process(self):
@@ -57,6 +60,10 @@ class Continuate(Exception):
 
 
 class Finish(Exception):
+    pass
+
+
+class Quit(Exception):
     pass
 
 
@@ -174,6 +181,10 @@ class VMObject(object):
         return cls(spur_object)
 
     @property
+    def address(self):
+        return self.obj.address
+
+    @property
     def is_true(self):
         return self is self.obj.memory.true
 
@@ -208,6 +219,7 @@ class VMObject(object):
     def __getitem__(self, index):
         return self.vmobject(self.obj[index])
 
+    @lru_cache()
     def lookup(self, selector):
         md = self.method_dictionnary
         try:
@@ -217,11 +229,14 @@ class VMObject(object):
             return CompiledMethod(method.bytecode, method.literals, method)
         except ValueError:
             print("Not found", selector.as_text(), "for", self.obj)
-            for key in md.array:
-                if key is not self.obj.memory.nil:
-                    print(key.as_text())
+            import ipdb; ipdb.set_trace()
+
+            # for key in md.array:
+            #     if key is not self.obj.memory.nil:
+            #         print(key.as_text())
             return self.superclass.lookup(selector)
 
+    @lru_cache()
     def lookup_byname(self, selector):
         md = self.method_dictionnary
         try:
@@ -235,9 +250,9 @@ class VMObject(object):
             return CompiledMethod(method.bytecode, method.literals, method)
         except ValueError:
             print("Not found", selector, "for", self.obj)
-            for key in md.array:
-                if key is not self.obj.memory.nil:
-                    print(key.as_text())
+            # for key in md.array:
+            #     if key is not self.obj.memory.nil:
+            #         print(key.as_text())
             return self.superclass.lookup_byname(selector)
 
     def __repr__(self):
