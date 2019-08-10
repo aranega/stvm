@@ -89,8 +89,8 @@ class AddressType(Enum):
 
 class SpurObject(Sequence):
     @staticmethod
-    def create(address, from_cls, memory):
-        nb_slots = from_cls.inst_size
+    def create(address, from_cls, memory, array_size=0):
+        nb_slots = from_cls.inst_size + array_size
         object_format = from_cls.inst_format
         header = ObjectHeader(
             class_index=from_cls.header.identity_hash,
@@ -109,6 +109,8 @@ class SpurObject(Sequence):
         encoded_header = header.encode()
         memory[address: address + 8] = struct.pack('II', *encoded_header)
         instance = object_types[object_format](header, address, memory)
+        for i in range(len(instance)):
+            instance.wslots[i] = memory.nil
         return instance
 
 
@@ -124,7 +126,8 @@ class SpurObject(Sequence):
         slots = memory.raw[start_slots:end_slots]
         self.raw = slots
         self.slots = [slots[i : i + 4] for i in range(0, len(slots), 4)]
-        self.instvars = MemoryFragment(self.slots[:], self.memory)
+        self.wslots = MemoryFragment(self.slots[:], self.memory)
+        self.instvars = self.wslots
         self.array = MemoryFragment([], self.memory)
 
     @property
@@ -169,9 +172,31 @@ class SpurObject(Sequence):
     def __len__(self):
         return len(self.slots)
 
+    def __hash__(self):
+        return object.__hash__(self)
 
-def create_instance(address, for_cls, memory):
-    return SpurObject.create(address, for_cls, memory)
+    def __eq__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+
+        h1 = self.header
+        h2 = other.header
+        if (h1.class_index != h2.class_index
+            or h1.object_format != h2.object_format
+            or h1.number_of_slots != h2.number_of_slots):
+            return False
+
+        for x, y in zip(self, other):
+            if x != y:
+                break
+        else:
+            return True
+
+        return False
+
+
+def create_instance(address, for_cls, memory, array_size=0):
+    return SpurObject.create(address, for_cls, memory, array_size=array_size)
 
 
 def register_for(o):
@@ -201,6 +226,13 @@ class ClassTable(VariableSizedWO):
         line = self.memory[bytes(self.slots[page])]
         row_address = line.slots[row]
         return self.memory[bytes(row_address)]
+
+    def search_class(self, name):
+        for c in self:
+            if c is self.memory.nil:
+                continue
+            if c.header.number_of_slots > 6 and c[6].as_text() == name:
+                return c
 
 
 @register_for(ObjectFormat.VARIABLE_SIZED_W)
@@ -337,6 +369,40 @@ class CompiledMethod(SpurObject):
     def selector_name(self):
         return self.selector.as_text()
 
+    def extract_block(self, copied, num_args, from_, block_size, outer_context):
+        return BlockClosure(copied, num_args, from_, block_size, outer_context, self)
+
+
+class BlockClosure(object):
+    def __init__(self, copied, num_args, from_, block_size, outer_context, compiled_method):
+        self.copied = copied
+        self.num_args = num_args
+        self.block_size = block_size
+        self.outer_context = outer_context
+        self.compiled_method = compiled_method
+        self.from_ = from_
+        self.home_context = None
+
+    @property
+    def literals(self):
+        return self.compiled_method.literals
+
+    @property
+    def bytecode(self):
+        return self.compiled_method.bytecode[self.from_ : self.from_ + self.block_size]
+
+    @property
+    def method_header(self):
+        return self.compiled_method.method_header
+
+    @property
+    @lru_cache(1)
+    def class_(self):
+        return self.compiled_method.memory.classes_table.search_class('BlockClosure')
+
+    def extract_block(self, copied, num_args, from_, block_size, outer_context):
+        return BlockClosure(copied, num_args, from_, block_size, outer_context, self.compiled_method)
+
 
 class ImmediateInteger(object):
     def __init__(self, raw=None, memory=None):
@@ -356,14 +422,42 @@ class ImmediateInteger(object):
     def __repr__(self):
         return f"{super().__repr__()}({self.value})"
 
+    def __eq__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+        return self.value == other.value
+
+    def __hash__(self):
+        return object.__hash__(self)
+
+    def __le__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+        return self.value <= other.value
+
 
 class ImmediateChar(object):
     def __init__(self, raw):
         self.address = int.from_bytes(raw, "little")
         self.value = chr(struct.unpack("2s", raw)[0] >> 2)
 
+    @property
+    def instvars(self):
+        return [self] * (self.class_.inst_size + 2)
+
+    def __getitem__(self, index):
+        return self
+
     def __repr__(self):
         return f"{super().__repr__()}({self.value})"
+
+    def __eq__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+        return self.value == other.value
+
+    def __hash__(self):
+        return object.__hash__(self)
 
 
 class MemoryFragment(Sequence):
@@ -378,8 +472,11 @@ class MemoryFragment(Sequence):
     def __setitem__(self, i, item):
         if isinstance(i, slice):
             raise NotImplementedError()
-        if isinstance(item, (ImmediateChar, ImmediateInteger)):
-            struct.pack_into("I", self.slots[i], 0, item)
+        if isinstance(item, ImmediateInteger):
+            struct.pack_into("I", self.slots[i], 0, (item.value << 1) | 0x1)
+            return
+        if isinstance(item, ImmediateChar):
+            struct.pack_into("I", self.slots[i], 0, (item.value << 2) | 0x2)
             return
         struct.pack_into("I", self.slots[i], 0, item.address)
 
@@ -420,11 +517,6 @@ class Memory(object):
                 self.raw_young[i] = item
                 return
             self.raw_image[i - offset] = item
-
-            if isinstance(item, (ImmediateChar, ImmediateInteger)):
-                struct.pack_into("I", self.slots[i], 0, item)
-                return
-            struct.pack_into("I", self.slots[i], 0, item.address)
 
         def __iter__(self):
             return itertools.chain(iter(self.raw_young), iter(self.raw_image))
@@ -496,6 +588,24 @@ class Memory(object):
 
     @property
     @lru_cache()
+    def array(self):
+        e = self.classes_table[16]
+        try:
+            assert e[6].as_text() == 'Array'
+            return e
+        except Exception:
+            for e in self.classes_table:
+                if e is self.nil:
+                    continue
+                try:
+                    if e[6].as_text() == 'Array':
+                        return e
+                except Exception:
+                    pass
+            raise Exception("No array in your image!")
+
+    @property
+    @lru_cache()
     def classes_table(self):
         extended_header_size = 8
         return self.__getitem__(
@@ -534,15 +644,3 @@ class Image(object):
     @property
     def mem(self):
         return Memory(self.header, self.raw_mem)
-
-
-class VM(object):
-    def __init__(self):
-        self.mem = None
-        self.image = None
-
-    # "/home/vince/dev/pharo/images/32bits/32bits.image"
-    def open_image(self, image_file="/home/vince/dev/pharo/images/32bits/32bits.image"):
-        with open(image_file, "rb") as f:
-            self.image = Image(f.read())
-            self.mem = self.image.mem

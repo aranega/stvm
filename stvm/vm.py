@@ -48,9 +48,11 @@ class MemoryAllocator(object):
         self.first_address = 1 << 3
 
 
-    def allocate(self, from_cls):
+    def allocate(self, from_cls, size=0):
         address = self.first_address
-        instance = create_instance(address, from_cls.obj, self.memory)
+        if size and isinstance(size, VMObject):
+            size = size.obj
+        instance = create_instance(address, from_cls.obj, self.memory, array_size=size)
         self.first_address = instance.end_address
         return vmobject(instance)
 
@@ -78,6 +80,7 @@ class Context(object):
         self,
         compiled_method=None,
         receiver=None,
+        temps=None,
         args=None,
         previous_context=None,
         initial_pc=0,
@@ -92,9 +95,12 @@ class Context(object):
             self.vm = previous_context.vm
         self.receiver = receiver
         self.compiled_method = compiled_method
-        self.temporaries = [
-            self.vm.mem.nil
-        ] * compiled_method.obj.method_header.num_temps
+        if temps is None:
+            num_temps = compiled_method.obj.method_header.num_temps
+            num_args = compiled_method.obj.method_header.num_args
+            self.temporaries = [self.vm.mem.nil] * (num_temps + num_args)
+        else:
+            self.temporaries = temps
         if args:
             self.temporaries[:len(args)] = [vmobject(a) for a in args]
         self.pc = initial_pc
@@ -141,13 +147,14 @@ class Context(object):
 class CompiledMethod(object):
     bytecodes_map = VM.bytecode_map
 
-    def __init__(self, raw_bytecode=None, literals=None, compiled_method=None):
+    def __init__(self, raw_bytecode=None, literals=None, compiled_method=None, from_cls=None):
         self.raw_bytecode = raw_bytecode
         self.bytecodes = [None] * len(raw_bytecode)
         # self.last_hash = hash(self.raw_bytecode)
         self.last_hash = 1
         self.literals = literals or []
         self.obj = compiled_method
+        self.from_cls = from_cls
 
     def preevaluate(self, pc):
         if not self.need_preevaluate_again:
@@ -163,6 +170,12 @@ class CompiledMethod(object):
         return True
 
 
+class BlockClosure(CompiledMethod):
+    def __init__(self, *args, outer_context=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.outer_context = outer_context
+
+
 def vmobject(o):
     return VMObject.vmobject(o)
 
@@ -172,6 +185,7 @@ class VMObject(object):
 
     def __init__(self, spur_object):
         self.obj = spur_object
+        # self.memory = spur_object.mem
 
     @classmethod
     @lru_cache()
@@ -221,20 +235,16 @@ class VMObject(object):
 
     @lru_cache()
     def lookup(self, selector):
-        md = self.method_dictionnary
-        try:
-            i = md.array.index(selector)
-            method = md.instvars[1][i].obj
-            print("Fetching", selector.as_text())
-            return CompiledMethod(method.bytecode, method.literals, method)
-        except ValueError:
-            print("Not found", selector.as_text(), "for", self.obj)
-            import ipdb; ipdb.set_trace()
-
-            # for key in md.array:
-            #     if key is not self.obj.memory.nil:
-            #         print(key.as_text())
-            return self.superclass.lookup(selector)
+        return self.lookup_byname(selector.as_text())
+        # md = self.method_dictionnary
+        # try:
+        #     i = md.array.index(selector)
+        #     method = md.instvars[1][i].obj
+        #     print("Fetching", selector.as_text())
+        #     return CompiledMethod(method.bytecode, method.literals, method, self)
+        # except ValueError:
+        #     print("Not found", selector.as_text(), "for", self.obj)
+        #     return self.superclass.lookup(selector)
 
     @lru_cache()
     def lookup_byname(self, selector):
@@ -246,14 +256,16 @@ class VMObject(object):
             else:
                 raise ValueError
             method = md.instvars[1][i].obj
-            print("Fetching by name", selector)
-            return CompiledMethod(method.bytecode, method.literals, method)
+            print("<*> Fetching by name", selector)
+            return CompiledMethod(method.bytecode, method.literals, method, self)
         except ValueError:
             print("Not found", selector, "for", self.obj)
-            # for key in md.array:
-            #     if key is not self.obj.memory.nil:
-            #         print(key.as_text())
-            return self.superclass.lookup_byname(selector)
+            if self.obj is self.obj.memory.nil:
+                return None
+            superclass = self.superclass
+            if superclass.obj is self.obj.memory.nil:
+                return None
+            return superclass.lookup_byname(selector)
 
     def __repr__(self):
         return "{}({})".format(super().__repr__(), self.obj)
