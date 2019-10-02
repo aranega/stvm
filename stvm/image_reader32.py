@@ -90,6 +90,9 @@ class AddressType(Enum):
 class SpurObject(Sequence):
     @staticmethod
     def create(address, from_cls, memory, array_size=0):
+        if isinstance(array_size, ImmediateInteger):
+            array_size = array_size.value
+
         nb_slots = from_cls.inst_size + array_size
         object_format = from_cls.inst_format
         header = ObjectHeader(
@@ -221,6 +224,8 @@ class ClassTable(VariableSizedWO):
         super().__init__(header, address, memory)
 
     def __getitem__(self, index):
+        if isinstance(index, str):
+            return self.search_class(index)
         page = index // 1024
         row = index % 1024
         line = self.memory[bytes(self.slots[page])]
@@ -389,11 +394,20 @@ class BlockClosure(object):
 
     @property
     def bytecode(self):
-        return self.compiled_method.bytecode[self.from_ : self.from_ + self.block_size]
+        cm = self.compiled_method
+        return cm.bytecode[self.from_ : self.from_ + self.block_size]
 
     @property
     def method_header(self):
-        return self.compiled_method.method_header
+        return self
+
+    @property
+    def memory(self):
+        return self.compiled_method.memory
+
+    @property
+    def num_temps(self):
+        return self.compiled_method.method_header.num_temps + len(self.copied)
 
     @property
     @lru_cache(1)
@@ -401,13 +415,13 @@ class BlockClosure(object):
         return self.compiled_method.memory.classes_table.search_class('BlockClosure')
 
     def extract_block(self, copied, num_args, from_, block_size, outer_context):
-        return BlockClosure(copied, num_args, from_, block_size, outer_context, self.compiled_method)
+        return BlockClosure(copied, num_args, from_, block_size, outer_context, self)
 
 
 class ImmediateInteger(object):
     def __init__(self, raw=None, memory=None):
         if raw:
-            self.address = int.from_bytes(raw, "little")
+            self.address = (int.from_bytes(raw, "little") << 1) | 0x1
             self.value = struct.unpack("i", raw)[0] >> 1
         if memory:
             self.class_ = memory.classes_table[1]
@@ -435,15 +449,50 @@ class ImmediateInteger(object):
             return False
         return self.value <= other.value
 
+    def __lt__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+        return self.value < other.value
+
+    def __gt__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+        return self.value > other.value
+
+    def __ge__(self, other):
+        if other.__class__ is not self.__class__:
+            return False
+        return self.value >= other.value
+
+
+def build_int(value, memory):
+    immediate = ImmediateInteger(memory=memory)
+    immediate.value = value
+    value <<= 1
+    value &= 0xFFFFFFFF
+    value |= 0x1
+    immediate.address = value
+    return immediate
+
 
 class ImmediateChar(object):
-    def __init__(self, raw):
+    def __init__(self, raw, memory=None):
         self.address = int.from_bytes(raw, "little")
-        self.value = chr(struct.unpack("2s", raw)[0] >> 2)
+        self.value = chr(self.address >> 2 & 0x0000FFFF)
+        if memory:
+            self.memory = memory
+            # self.class_ = memory.classes_table[2]
 
-    @property
-    def instvars(self):
-        return [self] * (self.class_.inst_size + 2)
+    # def as_text(self):
+    #     return self.value
+    #
+    # @property
+    # def instvars(self):
+    #     return [self] * (self.class_.inst_size + 2)
+    #
+    # @property
+    # def array(self):
+    #     return [self] * (self.class_.inst_size + 2)
 
     def __getitem__(self, index):
         return self
@@ -473,7 +522,8 @@ class MemoryFragment(Sequence):
         if isinstance(i, slice):
             raise NotImplementedError()
         if isinstance(item, ImmediateInteger):
-            struct.pack_into("I", self.slots[i], 0, (item.value << 1) | 0x1)
+            # struct.pack_into("I", self.slots[i], 0, (item.value << 1) | 0x1)
+            struct.pack_into("I", self.slots[i], 0, item.address)
             return
         if isinstance(item, ImmediateChar):
             struct.pack_into("I", self.slots[i], 0, (item.value << 2) | 0x2)
@@ -559,7 +609,7 @@ class Memory(object):
         if self.address_points_to(address) in (AddressType.SMALLINT, AddressType.SMALLINT_2):
             return ImmediateInteger(raw, self)
         if self.address_points_to(address) is AddressType.CHAR:
-            return ImmediateChar(raw)
+            return ImmediateChar(raw, self)
 
         header = self._decode_header(address)
         if class_table:

@@ -85,6 +85,7 @@ class Context(object):
         previous_context=None,
         initial_pc=0,
         vm=None,
+        copied=None,
     ):
         self.stack = []
         self.previous_context = previous_context
@@ -95,6 +96,7 @@ class Context(object):
             self.vm = previous_context.vm
         self.receiver = receiver
         self.compiled_method = compiled_method
+        self.name = getattr(self.compiled_method, 'name', 'NoneYet')
         if temps is None:
             num_temps = compiled_method.obj.method_header.num_temps
             num_args = compiled_method.obj.method_header.num_args
@@ -103,6 +105,7 @@ class Context(object):
             self.temporaries = temps
         if args:
             self.temporaries[:len(args)] = [vmobject(a) for a in args]
+        self.args = args or []
         self.pc = initial_pc
 
     def push(self, value):
@@ -115,32 +118,36 @@ class Context(object):
         return vmobject(self.stack[-1])
 
     def execute(self):
-        print("Executing", self)
+        name = self.name
+        print(f"Executing '{name}'[{id(self)}]")
         execution_finished = False
         while not execution_finished:
             try:
                 bytecode = self.compiled_method.preevaluate(self.pc)
                 print(f"   PC {self.pc}[{hex(bytecode.opcode)}]", bytecode)
+                if name == "Closure(Closure(removeSubscriber:))":
+                    import ipdb; ipdb.set_trace()
+
                 result = bytecode.execute(self)
                 if result is not None:
                     print("intermediate result", result)
                     if self.previous_context:
                         self.previous_context.push(result)
                     execution_finished = True
-                    print("Finishing", self)
+                    print(f"Finishing '{name}'[{id(self)}]")
             except Finish:
                 execution_finished = True
-                print("Finishing normally", self)
+                print(f"Finishing normaly '{name}'[{id(self)}]")
             except IndexError:
                 execution_finished = True
-                print("Finishing on exception", self)
+                print(f"Finishing on exception '{name}'[{id(self)}]")
                 raise
             except KeyError as e:
                 print("problem", self.compiled_method.raw_bytecode[self.pc])
                 import ipdb; ipdb.set_trace()
                 raise e
             except Continuate:
-                print("Stoping this execution for another", self)
+                print(f"Stoping '{name}'[{id(self)}] execution for going to '{self.next_context.name}'")
                 raise
 
 
@@ -175,6 +182,10 @@ class BlockClosure(CompiledMethod):
         super().__init__(*args, **kwargs)
         self.outer_context = outer_context
 
+    @property
+    def name(self):
+        return f"Closure({self.outer_context.name})"
+
 
 def vmobject(o):
     return VMObject.vmobject(o)
@@ -200,15 +211,15 @@ class VMObject(object):
 
     @property
     def is_true(self):
-        return self is self.obj.memory.true
+        return self.obj is self.obj.memory.true
 
     @property
     def is_false(self):
-        return self is self.obj.memory.false
+        return self.obj is self.obj.memory.false
 
     @property
     def is_nil(self):
-        return self is self.obj.memory.nil
+        return self.obj is self.obj.memory.nil
 
     @property
     def class_(self):
@@ -257,13 +268,24 @@ class VMObject(object):
                 raise ValueError
             method = md.instvars[1][i].obj
             print("<*> Fetching by name", selector)
-            return CompiledMethod(method.bytecode, method.literals, method, self)
+            c = CompiledMethod(method.bytecode, method.literals, method, self)
+            c.name = selector
+            return c
         except ValueError:
             print("Not found", selector, "for", self.obj)
-            if self.obj is self.obj.memory.nil:
-                return None
-            superclass = self.superclass
+            # import ipdb; ipdb.set_trace()
+
+            # for i, s in enumerate(md.array):
+            #     if s is not self.obj.memory.nil:
+            #         print(f"  {s.as_text()}")
+            if self.is_nil:
+                print("Well... I'm nill, that's strange")
+                import ipdb; ipdb.set_trace()
+                superclass = self.class_
+            else:
+                superclass = self.superclass
             if superclass.obj is self.obj.memory.nil:
+                print("Not found", selector, "for", self.obj)
                 return None
             return superclass.lookup_byname(selector)
 

@@ -31,7 +31,9 @@ class PushReceiverVariable(Bytecode):
     def execute(self, context):
         var_number = self.opcode
         receiver = context.receiver
-        context.push(receiver.instvars[var_number])
+        value = receiver.instvars[var_number]
+        print(f"      -> [{var_number}] {value.obj}")
+        context.push(value)
         context.pc += 1
 
 
@@ -46,8 +48,10 @@ class PushTemp(Bytecode):
 @register_bytecode([[32, 63]])
 class PushLiteralConstant(Bytecode):
     def execute(self, context):
-        literal = self.opcode - 32
-        context.push(literal)
+        literal_index = self.opcode - 32
+        literal_constant = context.compiled_method.literals[literal_index]
+        print(f"      -> {literal_constant}")
+        context.push(literal_constant)
         context.pc += 1
 
 
@@ -56,7 +60,9 @@ class PushLiteralVariable(Bytecode):
     def execute(self, context):
         literal_index = self.opcode - 64
         literal_association = context.compiled_method.literals[literal_index]
-        context.push(literal_association.instvars[1])
+        literal_variable = literal_association.instvars[1]
+        print(f"      -> {literal_variable}")
+        context.push(literal_variable)
         context.pc += 1
 
 
@@ -65,6 +71,7 @@ class PopIntoReceiverVariable(Bytecode):
     def execute(self, context):
         variable_index = self.opcode - 96
         value = context.pop()
+        print(f"      -> [{variable_index}] {value.obj} isNil? {value.obj is context.vm.mem.nil}")
         context.receiver.obj.instvars[variable_index] = value.obj
         context.pc += 1
 
@@ -104,6 +111,7 @@ class PushSpecialObject(Bytecode):
 class PushInt(Bytecode):
     def execute(self, context):
         value = self.opcode - 117
+        print(f"       -> {value}")
         immediate = build_int(value, context.vm.mem)
         context.push(vmobject(immediate))
         context.pc += 1
@@ -115,11 +123,25 @@ class ReturnReceiver(Bytecode):
         return context.receiver
 
 
+@register_bytecode([121])
+class ReturnTrue(Bytecode):
+    def execute(self, context):
+        return context.vm.mem.true
+
+
 @register_bytecode([124])
 class Return(Bytecode):
     def execute(self, context):
         result = context.pop()
         print("Result", result)
+        return result
+
+
+@register_bytecode([125])
+class BlockReturn(Bytecode):
+    def execute(self, context):
+        result = context.pop()
+        print("Block Result", result)
         return result
 
 
@@ -143,6 +165,24 @@ class OperationLongForm(Bytecode):
         else:  # receiver variable
             context.receiver.obj.instvars[index] = value.obj
         context.pc += 2
+
+
+@register_bytecode([131])
+class SingleExtendSend(Bytecode):
+    def execute(self, context):
+        frmt = context.compiled_method.obj.bytecode[context.pc + 1]
+        nb_args = (frmt & 0b11100000) >> 5
+        literal_index = frmt & 0b00011111
+        args = [context.pop() for _ in range(nb_args)]
+        receiver = context.pop()
+        selector = context.compiled_method.literals[literal_index]
+        compiled_method = receiver.class_.lookup(selector)
+        new_context = Context(
+            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=args
+        )
+
+        context.pc += 2
+        raise Continuate()
 
 
 @register_bytecode([133])
@@ -204,6 +244,7 @@ class CallPrimitive(Bytecode):
         try:
             pc = context.pc
             primitive_number = int.from_bytes(context.compiled_method.obj.bytecode[pc + 1 : pc + 3], 'little')
+            print(f'      -> {primitive_number}')
             result = execute_primitive(primitive_number, context)
             context.pc += 3
             return vmobject(result)
@@ -235,6 +276,7 @@ class PushClosure(Bytecode):
         block_size = int.from_bytes(context.compiled_method.obj.bytecode[pc + 2 : pc + 4], 'big')
 
         copied = [context.pop() for i in range(num_copied)]
+        copied.reverse()
 
         extract_block = context.compiled_method.obj.extract_block
         block = extract_block(copied, num_args, pc + 4, block_size, context)
@@ -248,6 +290,7 @@ class PushClosure(Bytecode):
 class Jump(Bytecode):
     def execute(self, context):
         jump_pc = self.opcode - 143
+        context.pc += 1
         context.pc += jump_pc
 
 
@@ -258,26 +301,27 @@ class JumpFalse(Bytecode):
         if result.is_false:
             jump_pc = self.opcode - 151
             context.pc += jump_pc
-        else:
-            context.pc += 2
+        context.pc += 1
 
 
-@register_bytecode([[160, 163]])
-class LongJumpBackward(Bytecode):
+@register_bytecode([[160, 167]])
+class LongJump(Bytecode):
     def execute(self, context):
-        shift = (self.opcode - 160) * 256
-        compiled_method = context.compiled_method
-        jump_pc = compiled_method.raw_bytecode[context.pc + 1] + shift - 1
-        context.pc -= jump_pc
-
-
-@register_bytecode([[164, 167]])
-class LongJumpForward(Bytecode):
-    def execute(self, context):
-        shift = (self.opcode - 164) * 256
+        shift = ((self.opcode - 160) - 4) * 256
         compiled_method = context.compiled_method
         jump_pc = compiled_method.raw_bytecode[context.pc + 1] + shift
+        print(f"      -> {jump_pc} from {context.pc + 2}")
         context.pc += jump_pc
+        context.pc += 2
+
+
+# @register_bytecode([[164, 167]])
+# class LongJumpForward(Bytecode):
+#     def execute(self, context):
+#         shift = (self.opcode - 164) * 256
+#         compiled_method = context.compiled_method
+#         jump_pc = compiled_method.raw_bytecode[context.pc + 1] + shift
+#         context.pc += jump_pc
 
 
 @register_bytecode([[168, 171]])
@@ -289,8 +333,7 @@ class LongJumpTrue(Bytecode):
             compiled_method = context.compiled_method
             jump_pc = compiled_method.raw_bytecode[context.pc + 1] + shift
             context.pc += jump_pc
-        else:
-            context.pc += 2
+        context.pc += 2
 
 
 @register_bytecode([[172, 175]])
@@ -301,9 +344,9 @@ class LongJumpFalse(Bytecode):
             shift = (self.opcode - 172) * 256
             compiled_method = context.compiled_method
             jump_pc = compiled_method.raw_bytecode[context.pc + 1] + shift
+            print(f"      -> result {result} {jump_pc}")
             context.pc += jump_pc
-        else:
-            context.pc += 2
+        context.pc += 2
 
 
 @register_bytecode([176])
@@ -316,21 +359,58 @@ class PerformPlus(Bytecode):
         raise Continuate()
 
 
+@register_bytecode([177])
+class PerformMinus(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '-', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
 @register_bytecode([178])
 class PerformInf(Bytecode):
     def execute(self, context):
-        receiver = context.pop()
         arg = context.pop()
-        compiled_method = receiver.class_.lookup_byname("<")
-        new_context = Context(
-            compiled_method=compiled_method,
-            receiver=receiver,
-            previous_context=context,
-            args=[arg],
-        )
-
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '<', args=[arg])
         context.pc += 1
         raise Continuate()
+        # receiver = context.pop()
+        # arg = context.pop()
+        # compiled_method = receiver.class_.lookup_byname("<")
+        # new_context = Context(
+        #     compiled_method=compiled_method,
+        #     receiver=receiver,
+        #     previous_context=context,
+        #     args=[arg],
+        # )
+        #
+        # context.pc += 1
+        # raise Continuate()
+
+
+@register_bytecode([179])
+class PerformSup(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '>', args=[arg])
+        context.pc += 1
+        raise Continuate()
+        # receiver = context.pop()
+        # arg = context.pop()
+        # compiled_method = receiver.class_.lookup_byname(">")
+        # new_context = Context(
+        #     compiled_method=compiled_method,
+        #     receiver=receiver,
+        #     previous_context=context,
+        #     args=[arg],
+        # )
+        #
+        # context.pc += 1
+        # raise Continuate()
 
 
 @register_bytecode([180])
@@ -349,6 +429,26 @@ class PerformEqual(Bytecode):
         arg = context.pop()
         receiver = context.pop()
         prepare_new_context(context, receiver, '=', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
+@register_bytecode([184])
+class PerformMult(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '*', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
+@register_bytecode([189])
+class PerformDoubleSlash(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '//', args=[arg])
         context.pc += 1
         raise Continuate()
 
@@ -434,11 +534,14 @@ class PerformNewWithArg(Bytecode):
 
 def prepare_new_context(context, receiver, selector, args=None):
     compiled_method = receiver.class_.lookup_byname(selector)
+    if receiver.class_ is context.vm.mem.nil:
+        import ipdb; ipdb.set_trace()
+
     # if compiled_method is None:
     #     compiled_method = receiver.class_.lookup_byname('doesNotUnderstand:')
     if compiled_method is None:
         print('Method', selector, 'not found')
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
 
     new_context = Context(
         compiled_method=compiled_method,
@@ -491,7 +594,7 @@ class Send2ArgSelector(Bytecode):
         selector = context.compiled_method.literals[literal_index]
         compiled_method = receiver.class_.lookup(selector)
         new_context = Context(
-            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=[arg1, arg]
+            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=[arg1, arg2]
         )
 
         context.pc += 1
