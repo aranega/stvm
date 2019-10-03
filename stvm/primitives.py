@@ -1,5 +1,5 @@
 from .vm import Quit, Continuate, Context, BlockClosure
-from .image_reader32 import build_int
+from .image_reader32 import build_int, build_char
 
 
 primitives = {}
@@ -23,6 +23,15 @@ def register_primitive(o):
     return func
 
 
+def build_ascii_string(s, vm):  # Refactor me... signature is bad
+    s = s.encode('ascii', 'ignore')
+    inst = vm.memory_allocator.allocate(vm.mem.bytestring, size=len(s))
+    inst_obj = inst.obj
+    for i, c in enumerate(s):
+        inst_obj[i] = c
+    return inst
+
+
 @register_primitive(1)
 def plus(context):
     receiver = context.receiver
@@ -33,11 +42,13 @@ def plus(context):
 
 
 @register_primitive(2)
-def plus(context):
+def minus(context):
     receiver = context.receiver
     arg = context.temporaries[0]
     res = build_int(receiver.obj.value - arg.obj.value, context.vm.mem)
     print(f"   {receiver.obj.value} - {arg.obj.value} == {res.value}")
+    # import ipdb; ipdb.set_trace()
+
     return res
 
 
@@ -80,7 +91,7 @@ def equal(context):
 
 
 @register_primitive(9)
-def plus(context):
+def mult(context):
     receiver = context.receiver
     arg = context.temporaries[0]
     res = build_int(receiver.obj.value * arg.obj.value, context.vm.mem)
@@ -89,7 +100,7 @@ def plus(context):
 
 
 @register_primitive(12)
-def plus(context):
+def div(context):
     receiver = context.receiver
     arg = context.temporaries[0]
     res = build_int(receiver.obj.value // arg.obj.value, context.vm.mem)
@@ -108,6 +119,13 @@ def at(context):
 def size(context):
     receiver = context.receiver
     return build_int(len(receiver.array), context.vm.mem)
+
+
+@register_primitive(63)
+def string_at(context):
+    arg = context.temporaries[0].obj.value
+    string = context.receiver.obj
+    return build_char(string[arg - 1][0], context.vm.mem)
 
 
 @register_primitive(70)
@@ -139,6 +157,18 @@ def wait(context):
     return cls
 
 
+@register_primitive(105)
+def string_replace(context):
+    string = context.receiver.obj
+    start = context.temporaries[0].obj.value
+    stop = context.temporaries[1].obj.value
+    with_ = context.temporaries[2].obj
+    starting_at = context.temporaries[3].obj.value
+    rep_offset = starting_at - start
+    for i in range(start - 1, stop):
+        string[i] = int.from_bytes(with_[i + rep_offset].tobytes(), 'little')
+
+
 @register_primitive(110)
 def identical(context):
     receiver = context.receiver
@@ -162,8 +192,10 @@ def quit(context):
 
 @register_primitive(121)
 def image_name(context):
-    from os import path
-    return path.basename(path.splitext(context.vm.image_file)[0])
+    # from os import path
+    # name = path.basename(path.splitext(context.vm.image_file)[0])
+    # return build_ascii_string(name, context.vm)
+    return build_ascii_string(context.vm.image_file, context.vm)
 
 
 @register_primitive(148)
@@ -178,8 +210,6 @@ def clone(context):
     context.vm.mem.__getitem__.cache_clear()
     inst = context.vm.mem[new_address]
     return inst
-
-
 
 
 @register_primitive(198)
@@ -203,7 +233,8 @@ def closureValueNoContextSwitch(context):
         temps=closure_obj.copied + outer_context.temporaries,
     )
     print('Start closure execution')
-    raise Continuate()
+    # new_context.execute()
+    # return context.peek()
 
 
 @register_primitive((202))
@@ -220,13 +251,18 @@ def closureValueNoContextSwitch(context):
         compiled_method=closure,
         receiver=outer_context.receiver,
         previous_context=context,
-        temps=closure_obj.copied + outer_context.temporaries,
+        temps=outer_context.temporaries,
         args=context.args,
     )
     print('Will start closure execution')
-    import ipdb; ipdb.set_trace()
+    # raise Continuate()
+    # new_context.execute()
+    # return context.peek()
 
-    raise Continuate()
+
+@register_primitive(235)
+def nop(context):
+    raise PrimitiveFail()
 
 
 @register_primitive(240)

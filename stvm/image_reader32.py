@@ -95,6 +95,14 @@ class SpurObject(Sequence):
 
         nb_slots = from_cls.inst_size + array_size
         object_format = from_cls.inst_format
+        if ObjectFormat.INDEXABLE_64.value <= object_format <= ObjectFormat.INDEXABLE_8_8.value:
+            shift = object_format - ObjectFormat.INDEXABLE_64.value
+            ibs = IndexableObject._item_by_slot[shift]
+            size = nb_slots // ibs
+            extra_slots = nb_slots % ibs
+            object_format = object_format + extra_slots
+            nb_slots = size + (1 if extra_slots > 0 else 0)
+
         header = ObjectHeader(
             class_index=from_cls.header.identity_hash,
             is_immutable=from_cls.header.is_immutable,
@@ -112,8 +120,9 @@ class SpurObject(Sequence):
         encoded_header = header.encode()
         memory[address: address + 8] = struct.pack('II', *encoded_header)
         instance = object_types[object_format](header, address, memory)
-        for i in range(len(instance)):
-            instance.wslots[i] = memory.nil
+        if not isinstance(instance, IndexableObject):
+            for i in range(len(instance)):
+                instance.wslots[i] = memory.nil
         return instance
 
 
@@ -199,7 +208,7 @@ class SpurObject(Sequence):
 
 
 def create_instance(address, for_cls, memory, array_size=0):
-    return SpurObject.create(address, for_cls, memory, array_size=array_size)
+    return for_cls.__class__.create(address, for_cls, memory, array_size=array_size)
 
 
 def register_for(o):
@@ -280,25 +289,38 @@ class WeakFixedSized(SpurObject):
 )
 class IndexableObject(SpurObject):
     _shift = [0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
+    _item_by_slot = [0, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4]  # 32b dependent
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         shift = self.header.object_format - ObjectFormat.INDEXABLE_64.value
+        self.item_by_slot = self._item_by_slot[shift]
         self.nb_empty_cases = self._shift[shift]
+        self.item_length = 4 // self.item_by_slot
+        self.array = self
 
     def __getitem__(self, index):
-        line = index // 4
-        row = index % 4
-        return self.slots[line][row]
+        line = index // self.item_by_slot
+        col = index % self.item_by_slot
+        return self.slots[line][col : col + self.item_length]
+
+    def __setitem__(self, index, item):
+        line = index // self.item_by_slot
+        col = index % self.item_by_slot
+        data = int.to_bytes(item, length=self.item_length, byteorder='little')
+        self.slots[line][col : col + self.item_length] = data
+        # struct.pack_into("I", self.slots[line][row], 0, data)
 
     def __iter__(self):
         return iter((self[i] for i in range(len(self))))
 
     def __len__(self):
-        return self.header.number_of_slots * 4 - self.nb_empty_cases
+        if self.header.number_of_slots == 0:
+            return 0
+        return self.header.number_of_slots * self.item_by_slot - self.nb_empty_cases
 
     def as_text(self):
-        return "".join((chr(i) for i in self))
+        return "".join((chr(i[0]) for i in self))
 
 
 @register_for(ObjectFormat.FIXED_SIZED)
@@ -412,7 +434,8 @@ class BlockClosure(object):
     @property
     @lru_cache(1)
     def class_(self):
-        return self.compiled_method.memory.classes_table.search_class('BlockClosure')
+        # return self.compiled_method.memory.classes_table.search_class('BlockClosure')
+        return self.compiled_method.memory.special_object_array[36]
 
     def extract_block(self, copied, num_args, from_, block_size, outer_context):
         return BlockClosure(copied, num_args, from_, block_size, outer_context, self)
@@ -424,7 +447,7 @@ class ImmediateInteger(object):
             self.address = (int.from_bytes(raw, "little") << 1) | 0x1
             self.value = struct.unpack("i", raw)[0] >> 1
         if memory:
-            self.class_ = memory.classes_table[1]
+            self.class_ = memory.smallinteger
 
     @property
     def instvars(self):
@@ -475,13 +498,24 @@ def build_int(value, memory):
     return immediate
 
 
+def build_char(value, memory):
+    immediate = ImmediateChar(memory=memory)
+    immediate.value = chr(value)
+    value <<= 2
+    value &= 0xFFFFFFFF
+    value |= 0x10
+    immediate.address = value
+    return immediate
+
+
 class ImmediateChar(object):
-    def __init__(self, raw, memory=None):
-        self.address = int.from_bytes(raw, "little")
-        self.value = chr(self.address >> 2 & 0x0000FFFF)
+    def __init__(self, raw=None, memory=None):
+        if raw:
+            self.address = int.from_bytes(raw, "little")
+            self.value = chr(self.address >> 2 & 0xFFFFFFFF)
         if memory:
             self.memory = memory
-            # self.class_ = memory.classes_table[2]
+            self.class_ = memory.character
 
     # def as_text(self):
     #     return self.value
@@ -637,22 +671,38 @@ class Memory(object):
         return self.true.next_object
 
     @property
-    @lru_cache()
+    @lru_cache(1)
+    def bytestring(self):
+        return self.special_object_array[6]
+
+    @property
+    @lru_cache(1)
+    def smallinteger(self):
+        return self.special_object_array[5]
+
+
+    @property
+    @lru_cache(1)
+    def character(self):
+        return self.special_object_array[19]
+
+    @property
+    @lru_cache(1)
     def array(self):
-        e = self.classes_table[16]
-        try:
-            assert e[6].as_text() == 'Array'
-            return e
-        except Exception:
-            for e in self.classes_table:
-                if e is self.nil:
-                    continue
-                try:
-                    if e[6].as_text() == 'Array':
-                        return e
-                except Exception:
-                    pass
-            raise Exception("No array in your image!")
+        return self.special_object_array[7]
+        # try:
+        #     assert e[6].as_text() == 'Array'
+        #     return e
+        # except Exception:
+        #     for e in self.classes_table:
+        #         if e is self.nil:
+        #             continue
+        #         try:
+        #             if e[6].as_text() == 'Array':
+        #                 return e
+        #         except Exception:
+        #             pass
+        #     raise Exception("No array in your image!")
 
     @property
     @lru_cache()

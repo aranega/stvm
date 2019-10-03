@@ -42,6 +42,7 @@ class PushTemp(Bytecode):
     def execute(self, context):
         temp_number = self.opcode - 16
         context.push(context.temporaries[temp_number])
+        print(f"      -> [{temp_number}] {context.temporaries[temp_number].obj}")
         context.pc += 1
 
 
@@ -95,13 +96,14 @@ class PushThisContext(Bytecode):
 class PushReceiver(Bytecode):
     def execute(self, context):
         context.push(context.receiver)
+        print(f"      -> {context.receiver.obj}")
         context.pc += 1
 
 
 @register_bytecode([[113, 115]])
 class PushSpecialObject(Bytecode):
     def execute(self, context):
-        position = 3 - (self.opcode - 113)
+        position = self.opcode - 113
         obj = context.vm.mem.special_object_array[position]
         context.push(obj)
         context.pc += 1
@@ -127,6 +129,12 @@ class ReturnReceiver(Bytecode):
 class ReturnTrue(Bytecode):
     def execute(self, context):
         return context.vm.mem.true
+
+
+@register_bytecode([122])
+class ReturnTrue(Bytecode):
+    def execute(self, context):
+        return context.vm.mem.false
 
 
 @register_bytecode([124])
@@ -174,13 +182,10 @@ class SingleExtendSend(Bytecode):
         nb_args = (frmt & 0b11100000) >> 5
         literal_index = frmt & 0b00011111
         args = [context.pop() for _ in range(nb_args)]
+        args.reverse()
         receiver = context.pop()
         selector = context.compiled_method.literals[literal_index]
-        compiled_method = receiver.class_.lookup(selector)
-        new_context = Context(
-            compiled_method=compiled_method, receiver=receiver, previous_context=context, args=args
-        )
-
+        prepare_new_context(context, receiver, selector.as_text(), args=args)
         context.pc += 2
         raise Continuate()
 
@@ -193,7 +198,8 @@ class SuperSend(Bytecode):
         nb_args = frmt & 0xF
         args = []
         for i in range(nb_args):
-            args = context.pop()
+            args.append(context.pop())
+        args.reverse()
         receiver = context.pop()
         selector = context.compiled_method.literals[literal_index]
         lookup_cls = context.compiled_method.from_cls
@@ -249,6 +255,9 @@ class CallPrimitive(Bytecode):
             context.pc += 3
             return vmobject(result)
         except PrimitiveFail:
+            nb_args = context.compiled_method.obj.method_header.num_args
+            context.push(context.receiver)
+            [context.push(context.args[i]) for i in range(nb_args)]
             context.pc += 3
 
 
@@ -315,15 +324,6 @@ class LongJump(Bytecode):
         context.pc += 2
 
 
-# @register_bytecode([[164, 167]])
-# class LongJumpForward(Bytecode):
-#     def execute(self, context):
-#         shift = (self.opcode - 164) * 256
-#         compiled_method = context.compiled_method
-#         jump_pc = compiled_method.raw_bytecode[context.pc + 1] + shift
-#         context.pc += jump_pc
-
-
 @register_bytecode([[168, 171]])
 class LongJumpTrue(Bytecode):
     def execute(self, context):
@@ -377,18 +377,6 @@ class PerformInf(Bytecode):
         prepare_new_context(context, receiver, '<', args=[arg])
         context.pc += 1
         raise Continuate()
-        # receiver = context.pop()
-        # arg = context.pop()
-        # compiled_method = receiver.class_.lookup_byname("<")
-        # new_context = Context(
-        #     compiled_method=compiled_method,
-        #     receiver=receiver,
-        #     previous_context=context,
-        #     args=[arg],
-        # )
-        #
-        # context.pc += 1
-        # raise Continuate()
 
 
 @register_bytecode([179])
@@ -399,18 +387,6 @@ class PerformSup(Bytecode):
         prepare_new_context(context, receiver, '>', args=[arg])
         context.pc += 1
         raise Continuate()
-        # receiver = context.pop()
-        # arg = context.pop()
-        # compiled_method = receiver.class_.lookup_byname(">")
-        # new_context = Context(
-        #     compiled_method=compiled_method,
-        #     receiver=receiver,
-        #     previous_context=context,
-        #     args=[arg],
-        # )
-        #
-        # context.pc += 1
-        # raise Continuate()
 
 
 @register_bytecode([180])
@@ -429,6 +405,16 @@ class PerformEqual(Bytecode):
         arg = context.pop()
         receiver = context.pop()
         prepare_new_context(context, receiver, '=', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
+@register_bytecode([183])
+class PerformDiff(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, '~=', args=[arg])
         context.pc += 1
         raise Continuate()
 
@@ -515,7 +501,8 @@ class PerformDo(Bytecode):
 class PerformNew(Bytecode):
     def execute(self, context):
         cls = context.pop()
-        print("Perform new for", cls.obj[6].as_text())
+        # print("Perform new for", cls.obj[6].as_text())
+        print("Perform new for", cls.obj)
         prepare_new_context(context, cls, 'new')
         context.pc += 1
         raise Continuate()
@@ -537,11 +524,12 @@ def prepare_new_context(context, receiver, selector, args=None):
     if receiver.class_ is context.vm.mem.nil:
         import ipdb; ipdb.set_trace()
 
-    # if compiled_method is None:
-    #     compiled_method = receiver.class_.lookup_byname('doesNotUnderstand:')
+    if selector == 'compare:with:collated:':
+        import ipdb; ipdb.set_trace()
+
+
     if compiled_method is None:
         print('Method', selector, 'not found')
-        # import ipdb; ipdb.set_trace()
 
     new_context = Context(
         compiled_method=compiled_method,

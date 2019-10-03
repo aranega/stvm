@@ -52,7 +52,9 @@ class MemoryAllocator(object):
         address = self.first_address
         if size and isinstance(size, VMObject):
             size = size.obj
-        instance = create_instance(address, from_cls.obj, self.memory, array_size=size)
+        if isinstance(from_cls, VMObject):
+            from_cls = from_cls.obj
+        instance = create_instance(address, from_cls, self.memory, array_size=size)
         self.first_address = instance.end_address
         return vmobject(instance)
 
