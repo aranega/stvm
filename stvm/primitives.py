@@ -190,6 +190,23 @@ def quit(context):
     raise Quit()
 
 
+@register_primitive(117)
+def external_call(context):
+    method = context.compiled_method
+    pragma = method.literals[0]
+    plugin = pragma[0].as_text()
+    call = pragma[1].as_text()
+    nb_args = method.obj.method_header.num_args
+    import importlib
+    plugin_module = importlib.import_module(f'stvm.plugins.{plugin}')
+    plugin_function = getattr(plugin_module, call)
+    args = context.temporaries[:nb_args]
+    args.reverse()
+    return plugin_function(context, *args)
+
+
+
+
 @register_primitive(121)
 def image_name(context):
     # from os import path
