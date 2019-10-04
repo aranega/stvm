@@ -47,8 +47,6 @@ def minus(context):
     arg = context.temporaries[0]
     res = build_int(receiver.obj.value - arg.obj.value, context.vm.mem)
     print(f"   {receiver.obj.value} - {arg.obj.value} == {res.value}")
-    # import ipdb; ipdb.set_trace()
-
     return res
 
 
@@ -81,6 +79,15 @@ def lessOrEqual(context):
     return context.vm.mem.false
 
 
+@register_primitive(6)
+def lessOrEqual(context):
+    receiver = context.receiver
+    arg = context.temporaries[0]
+    if receiver.obj >= arg.obj:
+        return context.vm.mem.true
+    return context.vm.mem.false
+
+
 @register_primitive(7)
 def equal(context):
     receiver = context.receiver
@@ -99,6 +106,27 @@ def mult(context):
     return res
 
 
+@register_primitive(10)
+def divide(context):
+    receiver = context.receiver
+    arg = context.temporaries[0]
+    res = receiver.obj.value / arg.obj.value
+    print(f"   {receiver.obj.value} / {arg.obj.value} == {res}")
+    if res % 10 == 0:
+        return build_int(int(res), context.vm.mem)
+    raise PrimitiveFail()
+
+
+@register_primitive(11)
+def mod(context):
+    receiver = context.receiver
+    arg = context.temporaries[0]
+    res = build_int(receiver.obj.value % arg.obj.value, context.vm.mem)
+    print(f"   {receiver.obj.value} // {arg.obj.value} == {res.value}")
+    return res
+
+
+
 @register_primitive(12)
 def div(context):
     receiver = context.receiver
@@ -115,6 +143,15 @@ def at(context):
     return receiver.obj.array[index - 1]
 
 
+@register_primitive(61)
+def at_put(context):
+    receiver = context.receiver
+    at = context.temporaries[0].obj.value
+    value = context.temporaries[1]
+    receiver.obj.array[at - 1] = value.obj
+    return value
+
+
 @register_primitive(62)
 def size(context):
     receiver = context.receiver
@@ -126,6 +163,25 @@ def string_at(context):
     arg = context.temporaries[0].obj.value
     string = context.receiver.obj
     return build_char(string[arg - 1][0], context.vm.mem)
+
+
+@register_primitive(64)
+def string_at_put(context):
+    at = context.temporaries[0].obj.value
+    value = context.temporaries[0]
+    string = context.receiver.obj
+    string[at] = value.obj.value
+    return value
+
+
+@register_primitive(66)
+def writestream_next_put(context):
+    value = context.temporaries[0]
+    stream = context.receiver.obj
+    current_index = stream[1].value
+    stream[0][current_index] = ord(value.obj.value)
+    stream.instvars[1] = build_int(current_index + 1, context.vm.mem)
+    return value
 
 
 @register_primitive(70)
@@ -201,7 +257,6 @@ def external_call(context):
     plugin_module = importlib.import_module(f'stvm.plugins.{plugin}')
     plugin_function = getattr(plugin_module, call)
     args = context.temporaries[:nb_args]
-    args.reverse()
     return plugin_function(context, *args)
 
 
@@ -213,6 +268,15 @@ def image_name(context):
     # name = path.basename(path.splitext(context.vm.image_file)[0])
     # return build_ascii_string(name, context.vm)
     return build_ascii_string(context.vm.image_file, context.vm)
+
+
+@register_primitive(135)
+def millisecond_clock(context):
+    import time
+    millis = int(round(time.time() * 1000))
+    milis_mask = 0x1FFFFFFF
+    res = build_int(millis & milis_mask, context.vm.mem)
+    return res
 
 
 @register_primitive(148)
@@ -229,32 +293,18 @@ def clone(context):
     return inst
 
 
+@register_primitive(170)
+def as_character(context):
+    value = context.temporaries[0].obj.value  # the int value of the char
+    return build_char(value, context.vm.mem)
+
+
 @register_primitive(198)
 def quit(context):
     raise PrimitiveFail()
 
 
-@register_primitive((201, 221))
-def closureValueNoContextSwitch(context):
-    closure_obj = context.receiver.obj
-    outer_context = closure_obj.home_context
-
-    closure = BlockClosure(raw_bytecode=closure_obj.bytecode,
-                           compiled_method=closure_obj,
-                           literals=closure_obj.literals,
-                           outer_context=outer_context)
-    new_context = Context(
-        compiled_method=closure,
-        receiver=outer_context.receiver,
-        previous_context=context,
-        temps=closure_obj.copied + outer_context.temporaries,
-    )
-    print('Start closure execution')
-    # new_context.execute()
-    # return context.peek()
-
-
-@register_primitive((202))
+@register_primitive((201, 202, 204, 221))
 def closureValueNoContextSwitch(context):
     closure_obj = context.receiver.obj
     outer_context = closure_obj.home_context
@@ -305,5 +355,10 @@ def nop(context):
 
 
 @register_primitive(264)
+def nop(context):
+    raise PrimitiveFail()
+
+
+@register_primitive(265)
 def nop(context):
     raise PrimitiveFail()

@@ -490,9 +490,9 @@ class ImmediateInteger(object):
 
 def build_int(value, memory):
     immediate = ImmediateInteger(memory=memory)
-    immediate.value = value
-    value <<= 1
+    immediate.value = value & 0xFFFFFFFF
     value &= 0xFFFFFFFF
+    value <<= 1
     value |= 0x1
     immediate.address = value
     return immediate
@@ -680,6 +680,10 @@ class Memory(object):
     def smallinteger(self):
         return self.special_object_array[5]
 
+    @property
+    @lru_cache(1)
+    def largepositiveint(self):
+        return self.special_object_array[13]
 
     @property
     @lru_cache(1)
