@@ -45,11 +45,21 @@ def build_largepositiveint(value, vm):  # Refactor me... signature is bad
 
 @register_primitive(1)
 def plus(context):
-    receiver = context.receiver
-    arg = context.temporaries[0]
-    res = build_int(receiver.obj.value + arg.obj.value, context.vm.mem)
-    print(f"   {receiver.obj.value} + {arg.obj.value} == {res.value}")
-    return res
+    # receiver = context.receiver
+    # arg = context.temporaries[0]
+    # res = build_int(receiver.obj.value + arg.obj.value, context.vm.mem)
+    # print(f"   {receiver.obj.value} + {arg.obj.value} == {res.value}")
+    # return res
+
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = left + right
+    print(f"   {left} + {right} == {left + right}")
+    if res > 2147483648:
+        return build_largepositiveint(res, context.vm)
+    if res < -2147483648:
+        import ipdb; ipdb.set_trace()
+    return build_int(res, context.vm.mem)
 
 
 @register_primitive(2)
@@ -65,7 +75,7 @@ def minus(context):
 def less(context):
     left = context.receiver.obj.as_int()
     right = context.temporaries[0].obj.as_int()
-    print(f"   {left} < {right} == {left >= right}")
+    print(f"   {left} < {right} == {left < right}")
     if left < right:
         return context.vm.mem.true
     return context.vm.mem.false
@@ -75,7 +85,7 @@ def less(context):
 def greater(context):
     left = context.receiver.obj.as_int()
     right = context.temporaries[0].obj.as_int()
-    print(f"   {left} > {right} == {left >= right}")
+    print(f"   {left} > {right} == {left > right}")
     if left > right:
         return context.vm.mem.true
     return context.vm.mem.false
@@ -135,7 +145,7 @@ def mod(context):
     receiver = context.receiver
     arg = context.temporaries[0]
     res = build_int(receiver.obj.value % arg.obj.value, context.vm.mem)
-    print(f"   {receiver.obj.value} // {arg.obj.value} == {res.value}")
+    print(f"   {receiver.obj.value} % {arg.obj.value} == {res.value}")
     return res
 
 
@@ -190,6 +200,24 @@ def largeint_mult(context):
     return res
 
 
+@register_primitive(31)
+def largeint_divide(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = build_largepositiveint(int(left / right), context.vm)
+    print(f"   {left} / {right} == {left / right}")
+    return res
+
+
+@register_primitive(32)
+def largeint_div(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = build_largepositiveint(left // right, context.vm)
+    print(f"   {left} // {right} == {left // right}")
+    return res
+
+
 @register_primitive(60)
 def at(context):
     receiver = context.receiver
@@ -209,7 +237,7 @@ def at_put(context):
 @register_primitive(62)
 def size(context):
     receiver = context.receiver
-    
+
     return build_int(len(receiver.array), context.vm.mem)
 
 
@@ -406,21 +434,6 @@ def utc_microsecond_clock(context):
     return res
 
 
-@register_primitive((256, 257, 258))
-def nop(context):
-    raise PrimitiveFail()
-
-
-@register_primitive(260)
-def nop(context):
-    raise PrimitiveFail()
-
-
-@register_primitive(264)
-def nop(context):
-    raise PrimitiveFail()
-
-
-@register_primitive(265)
+@register_primitive((256, 257, 258, 260, 262, 264, 265, 269))
 def nop(context):
     raise PrimitiveFail()

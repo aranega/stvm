@@ -139,9 +139,8 @@ class SpurObject(Sequence):
         self.memory = memory
 
         start_slots = address + 8
-        # end_slots = start_slots + (header.number_of_slots * 4)
-        end_slots = self.end_address
-        slots = memory.raw[start_slots:start_slots + (header.number_of_slots * 4)]
+        end_slots = self.nb_slots * 4
+        slots = memory.raw[start_slots:start_slots + end_slots]
         self.raw = slots
         self.slots = [slots[i : i + 4] for i in range(0, len(slots), 4)]
         self.wslots = MemoryFragment(self.slots[:], self.memory)
@@ -149,7 +148,7 @@ class SpurObject(Sequence):
         self.array = MemoryFragment([], self.memory)
 
     @property
-    def end_address(self):
+    def _end_address_nbslots(self):
         adr = self.address
         raw = self.memory.raw
         n = self.header.number_of_slots
@@ -158,7 +157,17 @@ class SpurObject(Sequence):
         header_size = 8
         basic_size = header_size + slots_size
         padding = basic_size % 8
-        return self.address + basic_size + padding
+        return self.address + basic_size + padding, nb_slots
+
+    @property
+    def nb_slots(self):
+        _, nbslots = self._end_address_nbslots
+        return nbslots
+
+    @property
+    def end_address(self):
+        end, _ = self._end_address_nbslots
+        return end
 
     @property
     def inst_size(self):
