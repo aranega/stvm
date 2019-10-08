@@ -99,9 +99,10 @@ class SpurObject(Sequence):
             shift = object_format - ObjectFormat.INDEXABLE_64.value
             ibs = IndexableObject._item_by_slot[shift]
             size = nb_slots // ibs
-            extra_slots = nb_slots % ibs
-            object_format = object_format + extra_slots
-            nb_slots = size + (1 if extra_slots > 0 else 0)
+            extra_cases = nb_slots % ibs
+            extra_slot = 1 if extra_cases > 0 else 0
+            object_format = object_format + (ibs - extra_cases) * extra_slot
+            nb_slots = size + extra_slot
 
         if nb_slots > 254:
             memory[address: address + 8] = struct.pack('Q', nb_slots)
@@ -140,7 +141,7 @@ class SpurObject(Sequence):
         start_slots = address + 8
         # end_slots = start_slots + (header.number_of_slots * 4)
         end_slots = self.end_address
-        slots = memory.raw[start_slots:end_slots]
+        slots = memory.raw[start_slots:start_slots + (header.number_of_slots * 4)]
         self.raw = slots
         self.slots = [slots[i : i + 4] for i in range(0, len(slots), 4)]
         self.wslots = MemoryFragment(self.slots[:], self.memory)
@@ -462,9 +463,9 @@ class ImmediateInteger(object):
         if memory:
             self.class_ = memory.smallinteger
 
-    @property
-    def instvars(self):
-        return [self] * (self.class_.inst_size + 2)
+    # @property
+    # def instvars(self):
+    #     return [self] * (self.class_.inst_size + 2)
 
     def __getitem__(self, index):
         return self

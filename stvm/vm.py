@@ -136,7 +136,7 @@ class Context(object):
         while not execution_finished:
             try:
                 bytecode = self.compiled_method.preevaluate(self.pc)
-                print(f"   PC {self.pc}[{hex(bytecode.opcode)}]", bytecode)
+                print(f"   PC {self.pc}[0x{bytecode.opcode:X}] {bytecode}")
                 result = bytecode.execute(self)
                 if result is not None:
                     print("intermediate result", result)

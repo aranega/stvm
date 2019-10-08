@@ -63,38 +63,40 @@ def minus(context):
 
 @register_primitive(3)
 def less(context):
-    receiver = context.receiver
-    arg = context.temporaries[0]
-    print(f"   {receiver.obj.value} < {arg.obj.value} == { receiver.obj < arg.obj}")
-    if receiver.obj < arg.obj:
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    print(f"   {left} < {right} == {left >= right}")
+    if left < right:
         return context.vm.mem.true
     return context.vm.mem.false
 
 
 @register_primitive(4)
 def greater(context):
-    receiver = context.receiver
-    arg = context.temporaries[0]
-    print(f"   {receiver.obj.value} > {arg.obj.value} == { receiver.obj > arg.obj}")
-    if receiver.obj > arg.obj:
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    print(f"   {left} > {right} == {left >= right}")
+    if left > right:
         return context.vm.mem.true
     return context.vm.mem.false
 
 
 @register_primitive(5)
 def lessOrEqual(context):
-    receiver = context.receiver
-    arg = context.temporaries[0]
-    if receiver.obj <= arg.obj:
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    print(f"   {left} <= {right} == {left <= right}")
+    if left <= right:
         return context.vm.mem.true
     return context.vm.mem.false
 
 
 @register_primitive(6)
 def lessOrEqual(context):
-    receiver = context.receiver
-    arg = context.temporaries[0]
-    if receiver.obj >= arg.obj:
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    print(f"   {left} >= {right} == {left >= right}")
+    if left >= right:
         return context.vm.mem.true
     return context.vm.mem.false
 
@@ -207,6 +209,7 @@ def at_put(context):
 @register_primitive(62)
 def size(context):
     receiver = context.receiver
+    
     return build_int(len(receiver.array), context.vm.mem)
 
 
@@ -403,12 +406,7 @@ def utc_microsecond_clock(context):
     return res
 
 
-@register_primitive(256)
-def nop(context):
-    raise PrimitiveFail()
-
-
-@register_primitive(257)
+@register_primitive((256, 257, 258))
 def nop(context):
     raise PrimitiveFail()
 

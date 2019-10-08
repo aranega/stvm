@@ -25,6 +25,9 @@ class Bytecode(object):
     def execute(self, context):
         pass
 
+    def __str__(self):
+        return f"{self.__class__.__name__} ({self.opcode})"
+
 
 @register_bytecode([[0, 15]])
 class PushReceiverVariable(Bytecode):
@@ -132,9 +135,15 @@ class ReturnTrue(Bytecode):
 
 
 @register_bytecode([122])
-class ReturnTrue(Bytecode):
+class ReturnFalse(Bytecode):
     def execute(self, context):
         return context.vm.mem.false
+
+
+@register_bytecode([123])
+class ReturnNil(Bytecode):
+    def execute(self, context):
+        return context.vm.mem.nil
 
 
 @register_bytecode([124])
@@ -190,18 +199,39 @@ class SingleExtendSend(Bytecode):
         raise Continuate()
 
 
+# REFACTOR ME
 @register_bytecode([132])
 class DoubleExtendSend(Bytecode):
     def execute(self, context):
-        nb_args = context.compiled_method.obj.bytecode[context.pc + 1]
+        frmt = context.compiled_method.obj.bytecode[context.pc + 1]
+        nb_args = frmt & 0b00011111
+        operation = (frmt & 0b11100000) >> 5
         literal_index = context.compiled_method.obj.bytecode[context.pc + 2]
-        args = [context.pop() for _ in range(nb_args)]
-        args.reverse()
-        receiver = context.pop()
-        selector = context.compiled_method.literals[literal_index]
-        prepare_new_context(context, receiver, selector.as_text(), args=args)
         context.pc += 3
-        raise Continuate()
+
+        if operation == 0:  # send
+            args = [context.pop() for _ in range(nb_args)]
+            args.reverse()
+            receiver = context.pop()
+            selector = context.compiled_method.literals[literal_index]
+            prepare_new_context(context, receiver, selector.as_text(), args=args)
+            raise Continuate()
+        elif operation == 1:  # super send
+            import ipdb; ipdb.set_trace()
+            raise Continuate()
+        elif operation == 2:  # push receiver variable
+            receiver = context.receiver
+            context.push(receiver[literal_index])
+        elif operation == 3:  # push literal constant
+            import ipdb; ipdb.set_trace()
+        elif operation == 4:  # push literal variable
+            import ipdb; ipdb.set_trace()
+        elif operation == 5:  # store receiver variable
+            import ipdb; ipdb.set_trace()
+        elif operation == 6:  # store-pop recevier variable
+            import ipdb; ipdb.set_trace()
+        elif operation == 7:  # store literal variable
+            import ipdb; ipdb.set_trace()
 
 
 @register_bytecode([133])
@@ -238,13 +268,24 @@ class DuplicateTopStack(Bytecode):
         context.pc += 1
 
 
+# 0 sender
+# 1 pc
+# 2 stackp
+# 3 method
+# 4 closureOrNil
+# 5 receiver
 @register_bytecode([137])
 class PushThisContext(Bytecode):
     def execute(self, context):
         context_class = context.vm.mem.context_class
         this_context = context.vm.memory_allocator.allocate(context_class)
-        this_context.obj.instvars[1] = build_int(context.pc, context.vm.mem)
+        this_context_obj = this_context.obj
+        this_context_obj.instvars[1] = build_int(context.pc, context.vm.mem)
+        this_context_obj.instvars[2] = build_int(len(context.stack), context.vm.mem)
+        this_context_obj.instvars[3] = context.compiled_method.obj
+        this_context_obj.instvars[5] = context.receiver.obj
         import ipdb; ipdb.set_trace()
+        context.push(this_context)
 
         context.pc += 1
 
