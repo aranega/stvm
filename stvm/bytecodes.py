@@ -190,6 +190,20 @@ class SingleExtendSend(Bytecode):
         raise Continuate()
 
 
+@register_bytecode([132])
+class DoubleExtendSend(Bytecode):
+    def execute(self, context):
+        nb_args = context.compiled_method.obj.bytecode[context.pc + 1]
+        literal_index = context.compiled_method.obj.bytecode[context.pc + 2]
+        args = [context.pop() for _ in range(nb_args)]
+        args.reverse()
+        receiver = context.pop()
+        selector = context.compiled_method.literals[literal_index]
+        prepare_new_context(context, receiver, selector.as_text(), args=args)
+        context.pc += 3
+        raise Continuate()
+
+
 @register_bytecode([133])
 class SuperSend(Bytecode):
     def execute(self, context):
@@ -224,6 +238,17 @@ class DuplicateTopStack(Bytecode):
         context.pc += 1
 
 
+@register_bytecode([137])
+class PushThisContext(Bytecode):
+    def execute(self, context):
+        context_class = context.vm.mem.context_class
+        this_context = context.vm.memory_allocator.allocate(context_class)
+        this_context.obj.instvars[1] = build_int(context.pc, context.vm.mem)
+        import ipdb; ipdb.set_trace()
+
+        context.pc += 1
+
+
 @register_bytecode([138])
 class PushOrPopIntoArray(Bytecode):
     def execute(self, context):
@@ -246,18 +271,19 @@ class PushOrPopIntoArray(Bytecode):
 @register_bytecode([139])
 class CallPrimitive(Bytecode):
     def execute(self, context):
+        compiled_method = context.compiled_method
+        current_pc = context.pc
         try:
             pc = context.pc
             primitive_number = int.from_bytes(context.compiled_method.obj.bytecode[pc + 1 : pc + 3], 'little')
             print(f'      -> {primitive_number}')
             result = execute_primitive(primitive_number, context)
-            context.pc += 3
-            if result is None:
-                vmobj = context.receiver
-            else:
-                vmobj = vmobject(result)
-            return vmobj
+            # context.pc += 3
+            if result is not None:
+                return vmobject(result)
         except PrimitiveFail:
+            context.compiled_method = compiled_method
+            context.pc = current_pc
             nb_args = context.compiled_method.obj.method_header.num_args
             context.push(context.receiver)
             [context.push(context.args[i]) for i in range(nb_args)]
@@ -469,6 +495,16 @@ class PerformMult(Bytecode):
         arg = context.pop()
         receiver = context.pop()
         prepare_new_context(context, receiver, '\\\\', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
+@register_bytecode([188])
+class PerformMult(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, 'bitShift:', args=[arg])
         context.pc += 1
         raise Continuate()
 

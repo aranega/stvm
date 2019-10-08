@@ -1,4 +1,4 @@
-from .vm import Quit, Continuate, Context, BlockClosure
+from .vm import Quit, Continuate, Context, BlockClosure, BlockContinuate
 from .image_reader32 import build_int, build_char
 
 
@@ -29,6 +29,17 @@ def build_ascii_string(s, vm):  # Refactor me... signature is bad
     inst_obj = inst.obj
     for i, c in enumerate(s):
         inst_obj[i] = c
+    return inst
+
+
+def build_largepositiveint(value, vm):  # Refactor me... signature is bad
+    cls = vm.mem.largepositiveint
+    size = (value.bit_length() + 7) // 8
+    inst = vm.memory_allocator.allocate(cls, size=size)
+    byte_array = value.to_bytes(size, byteorder='little')
+    inst_obj = inst.obj
+    for i, byte in enumerate(byte_array):
+        inst_obj[i] = byte
     return inst
 
 
@@ -136,6 +147,47 @@ def div(context):
     return res
 
 
+@register_primitive(13)
+def quo(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = build_int(int(float(left) / right), context.vm.mem)
+    print(f"   {left} quo: {right} == {res.as_int()}")
+    return res
+
+
+@register_primitive(17)
+def bitshift(context):
+    left = context.receiver.obj.as_int()
+    shift = context.temporaries[0].obj.as_int()
+    if shift < 0:
+        res = left >> shift
+    else:
+        res = left << shift
+    res = build_int(res, context.vm.mem)
+    print(f"   {left} shift: {shift} == {res.as_int()}")
+    return res
+
+
+@register_primitive(23)
+def largeint_inf(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    print(f"   {left} < {right} == {left == right}")
+    if left == right:
+        return context.vm.mem.true
+    return context.vm.mem.false
+
+
+@register_primitive(29)
+def largeint_mult(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = build_largepositiveint(left * right, context.vm)
+    print(f"   {left} * {right} == {left * right}")
+    return res
+
+
 @register_primitive(60)
 def at(context):
     receiver = context.receiver
@@ -223,6 +275,7 @@ def string_replace(context):
     rep_offset = starting_at - start
     for i in range(start - 1, stop):
         string[i] = int.from_bytes(with_[i + rep_offset].tobytes(), 'little')
+    return context.receiver
 
 
 @register_primitive(110)
@@ -257,9 +310,10 @@ def external_call(context):
     plugin_module = importlib.import_module(f'stvm.plugins.{plugin}')
     plugin_function = getattr(plugin_module, call)
     args = context.temporaries[:nb_args]
-    return plugin_function(context, *args)
-
-
+    result = plugin_function(context, *args)
+    if result is None:
+        return context.vm.mem.nil
+    return result
 
 
 @register_primitive(121)
@@ -299,6 +353,12 @@ def as_character(context):
     return build_char(value, context.vm.mem)
 
 
+@register_primitive(175)
+def behavior_hash(context):
+    receiver = context.receiver.obj
+    return build_int(receiver.header.identity_hash, context.vm.mem)
+
+
 @register_primitive(198)
 def quit(context):
     raise PrimitiveFail()
@@ -314,17 +374,19 @@ def closureValueNoContextSwitch(context):
                            literals=closure_obj.literals,
                            outer_context=outer_context)
 
-    new_context = Context(
-        compiled_method=closure,
-        receiver=outer_context.receiver,
-        previous_context=context,
-        temps=outer_context.temporaries,
-        args=context.args,
-    )
-    print('Will start closure execution')
-    # raise Continuate()
-    # new_context.execute()
-    # return context.peek()
+
+    context.compiled_method = closure
+    context.receiver = outer_context.receiver
+    context.temporaries = list(outer_context.temporaries)
+    context.temporaries[0:0] = context.args
+
+    # new_context = Context(
+    #     compiled_method=closure,
+    #     receiver=outer_context.receiver,
+    #     previous_context=context,
+    #     temps=outer_context.temporaries,
+    #     args=context.args,
+    # )
 
 
 @register_primitive(235)
@@ -335,8 +397,10 @@ def nop(context):
 @register_primitive(240)
 def utc_microsecond_clock(context):
     import time
-    return build_int(int(round(time.time() * 1000)), context.vm.mem)
-
+    t = int(round(time.time() * 1000))
+    res = build_largepositiveint(t, context.vm)
+    print(f'    -> UTC {t}')
+    return res
 
 
 @register_primitive(256)

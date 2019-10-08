@@ -25,6 +25,8 @@ class VM(object):
                     self.current_context = self.current_context.previous_context
                 except Continuate:
                     self.current_context = self.current_context.next_context
+                except Pass:
+                    pass
         except Quit:
             print('Evaluation finished')
 
@@ -60,6 +62,14 @@ class MemoryAllocator(object):
 
 
 class Continuate(Exception):
+    pass
+
+
+class Pass(Exception):
+    pass
+
+
+class BlockContinuate(Continuate):
     pass
 
 
@@ -102,7 +112,7 @@ class Context(object):
         if temps is None:
             num_temps = compiled_method.obj.method_header.num_temps
             num_args = compiled_method.obj.method_header.num_args
-            self.temporaries = [self.vm.mem.nil] * (num_temps + num_args)
+            self.temporaries = [vmobject(self.vm.mem.nil)] * (num_temps + num_args)
         else:
             self.temporaries = temps
         if args:
@@ -127,9 +137,6 @@ class Context(object):
             try:
                 bytecode = self.compiled_method.preevaluate(self.pc)
                 print(f"   PC {self.pc}[{hex(bytecode.opcode)}]", bytecode)
-                if name == "Closure(Closure(removeSubscriber:))":
-                    import ipdb; ipdb.set_trace()
-
                 result = bytecode.execute(self)
                 if result is not None:
                     print("intermediate result", result)

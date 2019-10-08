@@ -103,6 +103,11 @@ class SpurObject(Sequence):
             object_format = object_format + extra_slots
             nb_slots = size + (1 if extra_slots > 0 else 0)
 
+        if nb_slots > 254:
+            memory[address: address + 8] = struct.pack('Q', nb_slots)
+            address = address + 8  # We shift from 64 bits
+            nb_slots = 255
+
         header = ObjectHeader(
             class_index=from_cls.header.identity_hash,
             is_immutable=from_cls.header.is_immutable,
@@ -322,6 +327,14 @@ class IndexableObject(SpurObject):
     def as_text(self):
         return "".join((chr(i[0]) for i in self))
 
+    def as_int(self):
+        result = b''
+        for i in self:
+            tmp = i[0:self.item_length].tobytes()
+            result = result + tmp
+        return int.from_bytes(result, byteorder='little')
+
+
 
 @register_for(ObjectFormat.FIXED_SIZED)
 class FixedSized(SpurObject):
@@ -444,7 +457,7 @@ class BlockClosure(object):
 class ImmediateInteger(object):
     def __init__(self, raw=None, memory=None):
         if raw:
-            self.address = (int.from_bytes(raw, "little") << 1) | 0x1
+            self.address = int.from_bytes(raw, "little")
             self.value = struct.unpack("i", raw)[0] >> 1
         if memory:
             self.class_ = memory.smallinteger
@@ -487,12 +500,16 @@ class ImmediateInteger(object):
             return False
         return self.value >= other.value
 
+    def as_int(self):
+        return self.value
+
 
 def build_int(value, memory):
     immediate = ImmediateInteger(memory=memory)
-    immediate.value = value & 0xFFFFFFFF
-    value &= 0xFFFFFFFF
+    assert -2147483648 <= value < 2147483648  # 32b dependent
+    immediate.value = value
     value <<= 1
+    value &= 0xFFFFFFFF
     value |= 0x1
     immediate.address = value
     return immediate
@@ -516,17 +533,6 @@ class ImmediateChar(object):
         if memory:
             self.memory = memory
             self.class_ = memory.character
-
-    # def as_text(self):
-    #     return self.value
-    #
-    # @property
-    # def instvars(self):
-    #     return [self] * (self.class_.inst_size + 2)
-    #
-    # @property
-    # def array(self):
-    #     return [self] * (self.class_.inst_size + 2)
 
     def __getitem__(self, index):
         return self
@@ -679,6 +685,11 @@ class Memory(object):
     @lru_cache(1)
     def smallinteger(self):
         return self.special_object_array[5]
+
+    @property
+    @lru_cache(1)
+    def context_class(self):
+        return self.special_object_array[10]
 
     @property
     @lru_cache(1)

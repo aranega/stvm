@@ -2,8 +2,10 @@ from stvm import VM
 
 vm = VM()
 # vm.open_image("bootstrap.image")
-# vm.open_image("bootstrap2.image")
-vm.open_image("bootstrap3.image")
+vm.open_image("bootstrap2.image")
+# vm.open_image("bootstrap3.image")
+# vm.open_image("bootstrap-benchmark.image")
+# vm.open_image("bootstrap-block.image")
 # vm.open_image("bootstrap-todo.image")
 # vm.open_image("bootstrap-value.image")
 # vm.open_image("bootstrap-smallint.image")
