@@ -41,7 +41,8 @@ class VM(object):
         context = process[1]
         method = context.instvars[3]
         cm = CompiledMethod(method.bytecode, method.literals, method)
-        return Context(compiled_method=cm, receiver=context.instvars[5], vm=self)
+        receiver = vmobject(context.instvars[5])
+        return Context(compiled_method=cm, receiver=receiver, vm=self)
 
 
 class MemoryAllocator(object):
