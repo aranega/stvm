@@ -1,5 +1,5 @@
 from .vm import Quit, Continuate, Context, BlockClosure, BlockContinuate
-from .image_reader32 import build_int, build_char
+from .image_reader64 import build_int, build_char
 
 
 primitives = {}

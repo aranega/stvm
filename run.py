@@ -21,4 +21,4 @@ vm = VM()
 # vm.open_image("Pharo-32.image")
 vm.open_image("Pharo.image")
 
-vm.execute()
+# vm.execute()

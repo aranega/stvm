@@ -1,5 +1,5 @@
 from functools import lru_cache
-from .image_reader32 import Image, create_instance
+from .image_reader64 import Image, create_instance
 
 
 class VM(object):

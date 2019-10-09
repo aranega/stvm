@@ -139,10 +139,10 @@ class SpurObject(Sequence):
         self.memory = memory
 
         start_slots = address + 8
-        end_slots = self.nb_slots * 4
+        end_slots = self.nb_slots * 8
         slots = memory.raw[start_slots:start_slots + end_slots]
         self.raw = slots
-        self.slots = [slots[i : i + 4] for i in range(0, len(slots), 4)]
+        self.slots = [slots[i : i + 8] for i in range(0, len(slots), 8)]
         self.wslots = MemoryFragment(self.slots[:], self.memory)
         self.instvars = self.wslots
         self.array = MemoryFragment([], self.memory)
@@ -152,8 +152,8 @@ class SpurObject(Sequence):
         adr = self.address
         raw = self.memory.raw
         n = self.header.number_of_slots
-        nb_slots = n if n < 255 else int.from_bytes(raw[adr - 8 : adr - 4], "little")
-        slots_size = max(nb_slots, 1) * 4
+        nb_slots = n if n < 255 else int.from_bytes(raw[adr - 8 : adr], "little")
+        slots_size = max(nb_slots, 1) * 8
         header_size = 8
         basic_size = header_size + slots_size
         padding = basic_size % 8
@@ -304,14 +304,14 @@ class WeakFixedSized(SpurObject):
 )
 class IndexableObject(SpurObject):
     _shift = [0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
-    _item_by_slot = [0, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4]  # 32b dependent
+    _item_by_slot = [1, 2, 2, 4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 8, 8]  # 32b dependent
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         shift = self.header.object_format - ObjectFormat.INDEXABLE_64.value
         self.item_by_slot = self._item_by_slot[shift]
         self.nb_empty_cases = self._shift[shift]
-        self.item_length = 4 // self.item_by_slot
+        self.item_length = 8 // self.item_by_slot
         self.array = self
 
     def __getitem__(self, index):
@@ -379,7 +379,7 @@ class CompiledMethod(SpurObject):
         super().__init__(*args, **kwargs)
         method_format = int.from_bytes(self.slots[0], "little") >> 1
         num_literals = method_format & 0x7FFF
-        self.initial_pc = (num_literals + 1) * 4
+        self.initial_pc = (num_literals + 1) * 8
 
         if method_format & 0x10000:
             primitive = self.raw[self.initial_pc + 1] + (
@@ -400,7 +400,7 @@ class CompiledMethod(SpurObject):
 
     @property
     def bytecode(self):
-        return self.raw[self.method_header.num_literals * 4 :]
+        return self.raw[self.method_header.num_literals * 8:]
 
     @property
     def literals(self):
@@ -468,7 +468,7 @@ class ImmediateInteger(object):
     def __init__(self, raw=None, memory=None):
         if raw:
             self.address = int.from_bytes(raw, "little")
-            self.value = struct.unpack("i", raw)[0] >> 1
+            self.value = struct.unpack("q", raw)[0] >> 3
         if memory:
             self.class_ = memory.smallinteger
 
@@ -518,9 +518,9 @@ def build_int(value, memory):
     immediate = ImmediateInteger(memory=memory)
     assert -2147483648 <= value < 2147483648  # 32b dependent
     immediate.value = value
-    value <<= 1
-    value &= 0xFFFFFFFF
-    value |= 0x1
+    value <<= 3
+    value &= 0xFFFFFFFFFFFFFFFF
+    value |= 0x001
     immediate.address = value
     return immediate
 
@@ -528,9 +528,9 @@ def build_int(value, memory):
 def build_char(value, memory):
     immediate = ImmediateChar(memory=memory)
     immediate.value = chr(value)
-    value <<= 2
-    value &= 0xFFFFFFFF
-    value |= 0x10
+    value <<= 3
+    value &= 0xFFFFFFFFFFFFFFFF
+    value |= 0x010
     immediate.address = value
     return immediate
 
@@ -539,7 +539,7 @@ class ImmediateChar(object):
     def __init__(self, raw=None, memory=None):
         if raw:
             self.address = int.from_bytes(raw, "little")
-            self.value = chr(self.address >> 2 & 0xFFFFFFFF)
+            self.value = chr(self.address >> 3 & 0xFFFFFFFFFFFFFFFF)
         if memory:
             self.memory = memory
             self.class_ = memory.character
@@ -573,12 +573,12 @@ class MemoryFragment(Sequence):
             raise NotImplementedError()
         if isinstance(item, ImmediateInteger):
             # struct.pack_into("I", self.slots[i], 0, (item.value << 1) | 0x1)
-            struct.pack_into("I", self.slots[i], 0, item.address)
+            struct.pack_into("Q", self.slots[i], 0, item.address)
             return
         if isinstance(item, ImmediateChar):
-            struct.pack_into("I", self.slots[i], 0, (item.value << 2) | 0x2)
+            struct.pack_into("Q", self.slots[i], 0, item.address)
             return
-        struct.pack_into("I", self.slots[i], 0, item.address)
+        struct.pack_into("Q", self.slots[i], 0, item.address)
 
 
     def __iter__(self):
@@ -749,7 +749,8 @@ ImageHeader = namedtuple(
 
 
 class Image(object):
-    header_format = "IIIIIIII"
+    # header_format = "IIIIIIII"
+    header_format = "IIQQQQQI"
 
     def __init__(self, raw):
         self.raw = memoryview(raw)
