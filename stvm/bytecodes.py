@@ -149,6 +149,9 @@ class ReturnNil(Bytecode):
 @register_bytecode([124])
 class Return(Bytecode):
     def execute(self, context):
+        if context.outer_context:
+            print(" SHOULD UNWIND INTERMEDIATE CONTEXTS")
+            context.previous_context = context.outer_context.previous_context
         result = context.pop()
         print("Result", result)
         return result
@@ -300,12 +303,9 @@ class PushOrPopIntoArray(Bytecode):
         array_cls = vmobject(context.vm.mem.array)
         inst = context.vm.memory_allocator.allocate(array_cls, size=size)
         if pop:
-            result = context.peek()
             for i in range(size):
-                result.array[i] = context.pop().obj
-            import ipdb; ipdb.set_trace()
-        else:
-            context.push(inst)
+                inst.array[i] = context.pop().obj
+        context.push(inst)
         context.pc += 2
 
 
@@ -369,7 +369,7 @@ class PushClosure(Bytecode):
         copied.reverse()
 
         extract_block = context.compiled_method.obj.extract_block
-        block = extract_block(copied, num_args, pc + 4, block_size, context)
+        block = extract_block(copied, num_args, pc + 4, block_size)
         block.home_context = context
         context.push(vmobject(block))
 
@@ -672,6 +672,8 @@ def prepare_new_context(context, receiver, selector, args=None):
 
     if compiled_method is None:
         print('Method', selector, 'not found')
+        import ipdb; ipdb.set_trace()
+
 
     new_context = Context(
         compiled_method=compiled_method,

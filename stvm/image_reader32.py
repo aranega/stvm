@@ -208,6 +208,9 @@ class SpurObject(Sequence):
 
         h1 = self.header
         h2 = other.header
+        if (h1.identity_hash == h2.identity_hash):
+            return True
+
         if (h1.class_index != h2.class_index
             or h1.object_format != h2.object_format
             or h1.number_of_slots != h2.number_of_slots):
@@ -241,6 +244,9 @@ class VariableSizedWO(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.array, self.instvars = self.instvars, self.array
+
+    def __setitem__(self, index, item):
+        self.array[index] = item
 
 
 class ClassTable(VariableSizedWO):
@@ -397,6 +403,7 @@ class CompiledMethod(SpurObject):
             frame_size=56 if method_format & 0x20000 else 16,
             primitive=primitive,
         )
+        self.outer_context = None
 
     @property
     def bytecode(self):
@@ -419,16 +426,15 @@ class CompiledMethod(SpurObject):
     def selector_name(self):
         return self.selector.as_text()
 
-    def extract_block(self, copied, num_args, from_, block_size, outer_context):
-        return BlockClosure(copied, num_args, from_, block_size, outer_context, self)
+    def extract_block(self, copied, num_args, from_, block_size):
+        return BlockClosure(copied, num_args, from_, block_size, self)
 
 
 class BlockClosure(object):
-    def __init__(self, copied, num_args, from_, block_size, outer_context, compiled_method):
+    def __init__(self, copied, num_args, from_, block_size, compiled_method):
         self.copied = copied
         self.num_args = num_args
         self.block_size = block_size
-        self.outer_context = outer_context
         self.compiled_method = compiled_method
         self.from_ = from_
         self.home_context = None
@@ -460,8 +466,8 @@ class BlockClosure(object):
         # return self.compiled_method.memory.classes_table.search_class('BlockClosure')
         return self.compiled_method.memory.special_object_array[36]
 
-    def extract_block(self, copied, num_args, from_, block_size, outer_context):
-        return BlockClosure(copied, num_args, from_, block_size, outer_context, self)
+    def extract_block(self, copied, num_args, from_, block_size):
+        return BlockClosure(copied, num_args, from_, block_size, self)
 
 
 class ImmediateInteger(object):

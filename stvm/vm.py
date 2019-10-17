@@ -120,6 +120,7 @@ class Context(object):
             self.temporaries[:len(args)] = [vmobject(a) for a in args]
         self.args = args or []
         self.pc = initial_pc
+        self.outer_context = None
 
     def push(self, value):
         self.stack.append(vmobject(value))
@@ -188,9 +189,8 @@ class CompiledMethod(object):
 
 
 class BlockClosure(CompiledMethod):
-    def __init__(self, *args, outer_context=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.outer_context = outer_context
 
     @property
     def name(self):

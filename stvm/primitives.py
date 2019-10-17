@@ -176,8 +176,33 @@ def bitshift(context):
         res = left >> shift
     else:
         res = left << shift
-    res = build_int(res, context.vm.mem)
-    print(f"   {left} shift: {shift} == {res.as_int()}")
+    print(f"   {left} shift: {shift} == {res}")
+    if res > 2147483648:
+        res = build_largepositiveint(res, context.vm)
+    else:
+        res = build_int(res, context.vm.mem)
+    return res
+
+
+@register_primitive(21)
+def largeint_plus(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = build_largepositiveint(left + right, context.vm)
+    print(f"   {left} + {right} == {left + right}")
+    return res
+
+
+@register_primitive(22)
+def largeint_plus(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = left - right
+    print(f"   {left} - {right} == {left + right}")
+    if res <= 2147483648:
+        res  = build_int(res, context.vm.mem)
+    else:
+        res = build_largepositiveint(res, context.vm)
     return res
 
 
@@ -187,6 +212,16 @@ def largeint_inf(context):
     right = context.temporaries[0].obj.as_int()
     print(f"   {left} < {right} == {left == right}")
     if left == right:
+        return context.vm.mem.true
+    return context.vm.mem.false
+
+
+@register_primitive(25)
+def largeint_infeq(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    print(f"   {left} <= {right} == {left <= right}")
+    if left <= right:
         return context.vm.mem.true
     return context.vm.mem.false
 
@@ -251,20 +286,25 @@ def string_at(context):
 @register_primitive(64)
 def string_at_put(context):
     at = context.temporaries[0].obj.value
-    value = context.temporaries[0]
+    value = context.temporaries[1]
     string = context.receiver.obj
-    string[at] = value.obj.value
+    string[at - 1] = ord(value.obj.value)
     return value
 
 
-@register_primitive(66)
+@register_primitive((65, 66, 67))
 def writestream_next_put(context):
-    value = context.temporaries[0]
-    stream = context.receiver.obj
-    current_index = stream[1].value
-    stream[0][current_index] = ord(value.obj.value)
-    stream.instvars[1] = build_int(current_index + 1, context.vm.mem)
-    return value
+    raise PrimitiveFail()
+    # value = context.temporaries[0]
+    # stream = context.receiver.obj
+    # current_index = stream[1].value
+    #
+    # if stream.class_ is context.vm.mem.array:
+    #     stream[0][current_index] = value.obj
+    # else:
+    #     stream[0][current_index] = ord(value.obj.value)
+    # stream.instvars[1] = build_int(current_index + 1, context.vm.mem)
+    # return value
 
 
 @register_primitive(70)
@@ -282,10 +322,35 @@ def newWithArg(context):
     return inst
 
 
+@register_primitive(75)
+def hash_(context):
+    receiver = context.receiver
+    return build_int(receiver.address | 0x1, context.vm.mem)
+
+
+@register_primitive(83)
+def perform(context):
+    selector = context.temporaries[0].obj
+    receiver = context.receiver
+    compiled_method = receiver.class_.lookup(selector)
+    context.compiled_method = compiled_method
+    context.receiver = receiver
+    del context.temporaries[0]
+
+
+@register_primitive(84)
+def perform_with_args(context):
+    import ipdb; ipdb.set_trace()
+
+    return None
+
+
 @register_primitive(85)
 def signal(context):
     cls = context.receiver
     # inst = context.vm.memory_allocator.allocate(cls)
+    import ipdb; ipdb.set_trace()
+
     return cls
 
 
@@ -293,6 +358,8 @@ def signal(context):
 def wait(context):
     cls = context.receiver
     # inst = context.vm.memory_allocator.allocate(cls)
+    import ipdb; ipdb.set_trace()
+
     return cls
 
 
@@ -304,8 +371,13 @@ def string_replace(context):
     with_ = context.temporaries[2].obj
     starting_at = context.temporaries[3].obj.value
     rep_offset = starting_at - start
+    cls = string.class_
+    array_cls = context.vm.mem.array
     for i in range(start - 1, stop):
-        string[i] = int.from_bytes(with_[i + rep_offset].tobytes(), 'little')
+        if cls == array_cls:
+            string[i] = with_[i + rep_offset]
+        else:
+            string[i] = int.from_bytes(with_[i + rep_offset].tobytes(), 'little')
     return context.receiver
 
 
@@ -395,29 +467,25 @@ def quit(context):
     raise PrimitiveFail()
 
 
-@register_primitive((201, 202, 204, 221))
+@register_primitive((201, 202, 203, 204, 221))
 def closureValueNoContextSwitch(context):
     closure_obj = context.receiver.obj
     outer_context = closure_obj.home_context
 
     closure = BlockClosure(raw_bytecode=closure_obj.bytecode,
                            compiled_method=closure_obj,
-                           literals=closure_obj.literals,
-                           outer_context=outer_context)
+                           literals=closure_obj.literals)
 
+    temp_len = len(context.temporaries)
+    new_temps = [context.vm.mem.nil] * temp_len
+    if closure_obj.copied:
+        new_temps[0:temp_len] = closure_obj.copied
+    new_temps[0:0] = context.args
 
     context.compiled_method = closure
+    context.outer_context = outer_context
     context.receiver = outer_context.receiver
-    context.temporaries = list(outer_context.temporaries)
-    context.temporaries[0:0] = context.args
-
-    # new_context = Context(
-    #     compiled_method=closure,
-    #     receiver=outer_context.receiver,
-    #     previous_context=context,
-    #     temps=outer_context.temporaries,
-    #     args=context.args,
-    # )
+    context.temporaries = new_temps
 
 
 @register_primitive(235)
@@ -434,6 +502,6 @@ def utc_microsecond_clock(context):
     return res
 
 
-@register_primitive((256, 257, 258, 260, 262, 264, 265, 269))
+@register_primitive((171, 199, 256, 257, 258, 260, 262, 264, 265, 267, 269))
 def nop(context):
     raise PrimitiveFail()
