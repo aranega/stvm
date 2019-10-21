@@ -122,10 +122,14 @@ def equal(context):
 
 @register_primitive(9)
 def mult(context):
-    receiver = context.receiver
-    arg = context.temporaries[0]
-    res = build_int(receiver.obj.value * arg.obj.value, context.vm.mem)
-    print(f"   {receiver.obj.value} * {arg.obj.value} == {res.value}")
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = left + right
+    print(f"   {left} * {right} == {res}")
+    if res > 2147483648:
+        res = build_largepositiveint(res, context.vm)
+    else:
+        res = build_int(res, context.vm.mem)
     return res
 
 
@@ -168,12 +172,25 @@ def quo(context):
     return res
 
 
+@register_primitive(14)
+def bitand(context):
+    left = context.receiver.obj.as_int()
+    right = context.temporaries[0].obj.as_int()
+    res = left & right
+    print(f"   {left} & {right} == {res}")
+    if res > 2147483648:
+        res = build_largepositiveint(res, context.vm)
+    else:
+        res = build_int(res, context.vm.mem)
+    return res
+
+
 @register_primitive(17)
 def bitshift(context):
     left = context.receiver.obj.as_int()
     shift = context.temporaries[0].obj.as_int()
     if shift < 0:
-        res = left >> shift
+        res = left >> (-shift)
     else:
         res = left << shift
     print(f"   {left} shift: {shift} == {res}")
@@ -257,7 +274,10 @@ def largeint_div(context):
 def at(context):
     receiver = context.receiver
     index = context.temporaries[0].obj.value
-    return receiver.obj.array[index - 1]
+    res = receiver.obj.array[index - 1]
+    if isinstance(res, memoryview):
+        res = build_int(int.from_bytes(res.tobytes(), byteorder='little'), context.vm.mem)
+    return res
 
 
 @register_primitive(61)

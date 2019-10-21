@@ -560,6 +560,16 @@ class PerformDoubleSlash(Bytecode):
         raise Continuate()
 
 
+@register_bytecode([190])
+class PerformBitAnd(Bytecode):
+    def execute(self, context):
+        arg = context.pop()
+        receiver = context.pop()
+        prepare_new_context(context, receiver, 'bitAnd:', args=[arg])
+        context.pc += 1
+        raise Continuate()
+
+
 @register_bytecode([192])
 class PerformAt(Bytecode):
     def execute(self, context):
