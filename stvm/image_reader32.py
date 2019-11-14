@@ -321,16 +321,12 @@ class IndexableObject(SpurObject):
         self.array = self
 
     def __getitem__(self, index):
-        line = index // self.item_by_slot
-        col = index % self.item_by_slot
-        return self.slots[line][col : col + self.item_length]
+        index = self.item_length * index
+        return self.raw[index : index + self.item_length]
 
     def __setitem__(self, index, item):
-        line = index // self.item_by_slot
-        col = index % self.item_by_slot
         data = int.to_bytes(item, length=self.item_length, byteorder='little')
-        self.slots[line][col : col + self.item_length] = data
-        # struct.pack_into("I", self.slots[line][row], 0, data)
+        self.raw[index : index + self.item_length] = data
 
     def __iter__(self):
         return iter((self[i] for i in range(len(self))))
@@ -582,7 +578,7 @@ class MemoryFragment(Sequence):
             struct.pack_into("I", self.slots[i], 0, item.address)
             return
         if isinstance(item, ImmediateChar):
-            struct.pack_into("I", self.slots[i], 0, (item.value << 2) | 0x2)
+            struct.pack_into("I", self.slots[i], 0, item.address)
             return
         struct.pack_into("I", self.slots[i], 0, item.address)
 
@@ -721,19 +717,6 @@ class Memory(object):
     @lru_cache(1)
     def array(self):
         return self.special_object_array[7]
-        # try:
-        #     assert e[6].as_text() == 'Array'
-        #     return e
-        # except Exception:
-        #     for e in self.classes_table:
-        #         if e is self.nil:
-        #             continue
-        #         try:
-        #             if e[6].as_text() == 'Array':
-        #                 return e
-        #         except Exception:
-        #             pass
-        #     raise Exception("No array in your image!")
 
     @property
     @lru_cache()

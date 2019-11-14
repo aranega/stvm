@@ -168,24 +168,18 @@ class CompiledMethod(object):
     def __init__(self, raw_bytecode=None, literals=None, compiled_method=None, from_cls=None):
         self.raw_bytecode = raw_bytecode
         self.bytecodes = [None] * len(raw_bytecode)
-        # self.last_hash = hash(self.raw_bytecode)
         self.last_hash = 1
         self.literals = literals or []
         self.obj = compiled_method
         self.from_cls = from_cls
 
     def preevaluate(self, pc):
-        if not self.need_preevaluate_again:
-            return self.bytecodes[pc]
+        current_bytecode = self.bytecodes[pc]
+        if current_bytecode is not None:
+            return current_bytecode
         opcode = self.raw_bytecode[pc]
         self.bytecodes[pc] = self.bytecodes_map[opcode](opcode)
-        # self.last_hash = hash(self.raw_bytecode)
         return self.bytecodes[pc]
-
-    @property
-    def need_preevaluate_again(self):
-        # return hash(self.raw_bytecode) != self.last_hash
-        return True
 
 
 class BlockClosure(CompiledMethod):
@@ -197,6 +191,7 @@ class BlockClosure(CompiledMethod):
         return f"Closure({self.outer_context.name})"
 
 
+@lru_cache()
 def vmobject(o):
     return VMObject.vmobject(o)
 
@@ -254,26 +249,33 @@ class VMObject(object):
     def __getitem__(self, index):
         return self.vmobject(self.obj[index])
 
-    @lru_cache()
+    @lru_cache(maxsize=256)
+    # @profile
     def lookup(self, selector):
-        return self.lookup_byname(selector.as_text())
-        # md = self.method_dictionnary
-        # try:
-        #     i = md.array.index(selector)
-        #     method = md.instvars[1][i].obj
-        #     print("Fetching", selector.as_text())
-        #     return CompiledMethod(method.bytecode, method.literals, method, self)
-        # except ValueError:
-        #     print("Not found", selector.as_text(), "for", self.obj)
-        #     return self.superclass.lookup(selector)
+        md = self.method_dictionnary
+        try:
+            i = md.array.index(selector)
+            method = md.instvars[1][i].obj
+            print("Fetching", selector.as_text())
+            return CompiledMethod(method.bytecode, method.literals, method, self)
+        except ValueError:
+            print("Not found", selector.as_text(), "for", self.obj)
+            if self.superclass.obj is self.obj.memory.nil:
+                print("Not found", selector, "for", self.obj)
+                return None
+            return self.superclass.lookup(selector)
 
-    @lru_cache()
+    @lru_cache(maxsize=256)
+    # @profile
     def lookup_byname(self, selector):
+        nil_obj = self.obj.memory.nil
         md = self.method_dictionnary
         try:
             for i, s in enumerate(md.array):
-                if s is not self.obj.memory.nil and s.as_text() == selector:
-                    break
+                if s is not nil_obj:
+                    t = s.as_text()
+                    if t == selector:
+                        break
             else:
                 raise ValueError
             method = md.instvars[1][i].obj
@@ -283,21 +285,61 @@ class VMObject(object):
             return c
         except ValueError:
             print("Not found", selector, "for", self.obj)
-            # import ipdb; ipdb.set_trace()
-
-            # for i, s in enumerate(md.array):
-            #     if s is not self.obj.memory.nil:
-            #         print(f"  {s.as_text()}")
-            if self.is_nil:
-                print("Well... I'm nill, that's strange")
-                import ipdb; ipdb.set_trace()
-                superclass = self.class_
-            else:
-                superclass = self.superclass
-            if superclass.obj is self.obj.memory.nil:
+            # if self.is_nil:
+            #     print("Well... I'm nill, that's strange")
+            #     import ipdb; ipdb.set_trace()
+            #     superclass = self.class_
+            # else:
+            superclass = self.superclass
+            if superclass.is_nil:
                 print("Not found", selector, "for", self.obj)
                 return None
             return superclass.lookup_byname(selector)
 
     def __repr__(self):
         return "{}({})".format(super().__repr__(), self.obj)
+
+
+
+@lru_cache(maxsize=256)
+def lookup(cls, selector):
+    md = cls.method_dictionnary
+    try:
+        i = md.array.index(selector)
+        method = md.instvars[1][i].obj
+        print("Fetching", selector.as_text())
+        return CompiledMethod(method.bytecode, method.literals, method, cls)
+    except ValueError:
+        print("Not found", selector.as_text(), "for", cls.obj)
+        if cls.superclass.obj is cls.obj.memory.nil:
+            print("Not found", selector, "for", cls.obj)
+            return None
+        return lookup(cls.superclass, selector)
+
+
+@lru_cache(maxsize=256)
+def lookup_byname(cls, selector):
+    md = cls.method_dictionnary
+    try:
+        for i, s in enumerate(md.array):
+            if s is not cls.obj.memory.nil and s.as_text() == selector:
+                break
+        else:
+            raise ValueError
+        method = md.instvars[1][i].obj
+        print("<*> Fetching by name", selector)
+        c = CompiledMethod(method.bytecode, method.literals, method, cls)
+        c.name = selector
+        return c
+    except ValueError:
+        print("Not found", selector, "for", cls.obj)
+        if cls.is_nil:
+            print("Well... I'm nill, that's strange")
+            import ipdb; ipdb.set_trace()
+            superclass = cls.class_
+        else:
+            superclass = cls.superclass
+        if superclass.obj is cls.obj.memory.nil:
+            print("Not found", selector, "for", cls.obj)
+            return None
+        return lookup_byname(superclass, selector)

@@ -1,4 +1,4 @@
-from .vm import Continuate, Finish, VM, Context, vmobject
+from .vm import Continuate, Finish, VM, Context, vmobject, lookup, lookup_byname
 from .primitives import execute_primitive, build_int, PrimitiveFail
 
 
@@ -250,6 +250,7 @@ class SuperSend(Bytecode):
         lookup_cls = context.compiled_method.from_cls
 
         compiled_method = lookup_cls.superclass.lookup(selector)
+        # compiled_method = lookup(lookup_cls.superclass, selector)
         new_context = Context(
             compiled_method=compiled_method, receiver=receiver, previous_context=context, args=args
         )
@@ -673,6 +674,7 @@ class PerformNewWithArg(Bytecode):
 
 def prepare_new_context(context, receiver, selector, args=None):
     compiled_method = receiver.class_.lookup_byname(selector)
+    # compiled_method = lookup_byname(receiver.class_, selector)
     if receiver.class_ is context.vm.mem.nil:
         import ipdb; ipdb.set_trace()
 
@@ -701,6 +703,7 @@ class Send0ArgSelector(Bytecode):
         receiver = context.pop()
         selector = context.compiled_method.literals[literal_index]
         compiled_method = receiver.class_.lookup(selector)
+        # compiled_method = lookup(receiver.class_, selector)
         new_context = Context(
             compiled_method=compiled_method, receiver=receiver, previous_context=context
         )
@@ -717,6 +720,7 @@ class Send1ArgSelector(Bytecode):
         arg = context.pop()
         receiver = context.pop()
         compiled_method = receiver.class_.lookup(selector)
+        # compiled_method = lookup(receiver.class_, selector)
 
         new_context = Context(
             compiled_method=compiled_method, receiver=receiver, previous_context=context, args=[arg]
@@ -735,6 +739,7 @@ class Send2ArgSelector(Bytecode):
         receiver = context.pop()
         selector = context.compiled_method.literals[literal_index]
         compiled_method = receiver.class_.lookup(selector)
+        # compiled_method = lookup(receiver.class_, selector)
         new_context = Context(
             compiled_method=compiled_method, receiver=receiver, previous_context=context, args=[arg1, arg2]
         )
