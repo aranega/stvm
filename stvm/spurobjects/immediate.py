@@ -1,4 +1,5 @@
 from .objects import SpurObject
+import struct
 
 class ImmediateInteger(SpurObject):
     class_ = None

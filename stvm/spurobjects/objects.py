@@ -1,3 +1,19 @@
+class SubList(object):
+    def __init__(self, raw_slots):
+        self.raw_slots = raw_slots
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            s = i.start and i.start * 8
+            e = i.stop and i.stop * 8
+            return self.__class__(self.raw_slots[s:e:i.step])
+        i = i * 8
+        return self.raw_slots[i:i + 8]
+
+    def __len__(self):
+        return len(self.raw_slots) // 8
+
+
 class SpurObject(object):
     header_size = 8
     def __init__(self, address, memory):
@@ -27,12 +43,21 @@ class SpurObject(object):
         _, nb_slots = self.decode_basicinfo(header)
         if nb_slots > 254:
             nb_slots = mem[address - 8 : address - 4].cast("I")[0]
+        self.number_of_slots = nb_slots
         self.raw_object = mem[address:address + self.header_size + (nb_slots * 8)]
         self.header = self.raw_object[:8]
         self.header1 = self.header[:4]
+        self.h1 = self.header1.cast("I")[0]
         self.header2 = self.header[4:8]
+        self.h2 = self.header2.cast("I")[0]
         self.raw_slots = self.raw_object[8:]
-        self.slots = [self.raw_slots[i:i + 8] for i in range(0, nb_slots * 8, 8)]
+        self.slots = SubList(self.raw_slots)
+        self.object_format = (self.h1 & 0x1F000000) >> 24
+        self.class_index = self.h1 & 0x3FFFFF
+        self.is_immutable = (self.h1 & 0x600000) > 0
+        self.is_remembered = (self.h1 & 0x20000000) > 0
+        self.is_pinned = (self.h1 & 0x40000000) > 0
+        self.identity_hash = self.h2 & 0x3FFFFF
 
     @classmethod
     def create(cls, address, memory, class_table=False):
@@ -71,60 +96,28 @@ class SpurObject(object):
         return self.memory.object_at(self.slots[index].cast("Q")[0])
 
     @property
-    def h1(self):
-        return self.header1.cast("I")[0]
-
-    @property
-    def h2(self):
-        return self.header2.cast("I")[0]
-
-    @property
-    def class_index(self):
-        return self.h1 & 0x3FFFFF
-
-    @property
     def inst_size(self):
         return self[2] & 0xFFFF
-
-    @property
-    def number_of_slots(self):
-        adr = self.address
-        mem = self.memory
-        n = (self.h2 & 0xFF000000) >> 24
-        return n if n < 255 else mem[adr - 8 : adr - 4].cast("I")[0]
-
-    @property
-    def is_immutable(self):
-        return (self.h1 & 0x600000) > 0
-
-    @property
-    def object_format(self):
-        return (self.h1 & 0x1F000000) >> 24
-
-    @property
-    def is_remembered(self):
-        return (self.h1 & 0x20000000) > 0
-
-    @property
-    def is_pinned(self):
-        return (self.h1 & 0x40000000) > 0
 
     @property
     def class_(self):
         return self.memory.class_table[self.class_index]
 
-
-class VariableSizedWO(SpurObject):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def slot(self, index):
+        return self[index]
 
     def __len__(self):
         return self.number_of_slots
 
 
+class VariableSizedWO(SpurObject):
+    ...
+
+
 class ClassTable(VariableSizedWO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.number_of_slots = 1024 * 1024
 
     def __getitem__(self, index):
         page = index // 1024
@@ -139,19 +132,14 @@ class VariableSizedW(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         nb_instvars = self.class_.inst_size
+        self.instvars = self.slots[0:nb_instvars]
+        self.array = self.slots[nb_instvars:]
 
+    def instvar(self, index):
+        return self.memory.object_at(self.instvars[index].cast("Q")[0])
 
-    def __getitem__(self, index):
-        if len(self) == 0xFF:
-            page = index // 0xFE
-            row = index % 0xFE
-            line_address = self.array[page]
-            line = self.memory[line_address]
-            row_address = line.slots[row]
-            return self.memory[row_address]
-
-        address = self.array[index]
-        return self.memory[address]
+    def array_at(self, index):
+        return self.memory.object_at(self.array[index].cast("Q")[0])
 
 
 class ZeroSized(SpurObject):
@@ -191,6 +179,38 @@ class Indexable(SpurObject):
     def __repr__(self):
         return f"{super().__repr__()}({self.as_text()})"
 
+
+class CompiledMethod(SpurObject):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        method_format = self[0].value
+        num_literals = method_format & 0x7FFF
+        self.initial_pc = (num_literals + 1) * 8
+
+        raw = self.raw_object[8:]
+        pc = self.initial_pc
+        if method_format & 0x10000:
+            primitive = raw[pc + 1] + (raw[pc + 2] << 8)
+        else:
+            primitive = 0
+
+        self.sign_flag = method_format < 0
+        self.num_literals = num_literals
+        self.num_args = (method_format >> 24) & 0x0F
+        self.num_temps = (method_format >> 18) & 0x3F
+        self.frame_size = 56 if method_format & 0x20000 else 16
+        self.primitive = primitive
+        self.literals = self.slots[1:num_literals]
+        self.bytecodes = raw[num_literals * 8 + 8:-1]
+        self.trailer_byte = raw[-1]
+
+    def literal_at(self, index):
+        return self.memory.object_at(self.literals[index].cast("Q")[0])
+
+    def size(self):
+        return self.number_of_slots * 8 - 8  # - the format header
+
+
 spur_implems = {
     0: ZeroSized,
     1: FixedSized,
@@ -212,5 +232,13 @@ spur_implems = {
     21: Indexable,
     22: Indexable,
     23: Indexable,
+    24: CompiledMethod,
+    25: CompiledMethod,
+    26: CompiledMethod,
+    27: CompiledMethod,
+    28: CompiledMethod,
+    29: CompiledMethod,
+    30: CompiledMethod,
+    31: CompiledMethod,
 }
 SpurObject.spur_implems = spur_implems

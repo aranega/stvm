@@ -28,12 +28,20 @@ class SpurMemoryHandler(object):
         "character": 19,
     }
     def __init__(self, memory):
-        self.cache = {}
         self.memory = memory
+        self.cache = {}
 
     def init_const(self):
         for name, pos in self.special_array.items():
             setattr(self.memory, name, self.special_object_array[pos])
+        setattr(self.memory, "class_table", self.class_table)
+        setattr(self.memory, "special_object_array", self.special_object_array)
+
+    def init_smallints(self):
+        for i in range(0, 255):
+            addr = struct.unpack("q", struct.pack("q", ((i << 3) & 0xFFFFFFFF) | 0x01 ))
+            addr = addr[0]
+            self.cache[addr] = ImmediateInteger(addr, self.memory)
 
     @property
     def special_object_array(self):
@@ -75,6 +83,7 @@ class VMMemory(object):
         self.mem[old:] = objects
         self.handler = SpurMemoryHandler(self)
         self.handler.init_const()
+        self.handler.init_smallints()
 
     def __getitem__(self, i):
         return self.mem[i]
@@ -85,10 +94,6 @@ class VMMemory(object):
 
     def object_at(self, address):
         return self.handler.object_at(address)
-
-    @property
-    def class_table(self):
-        return self.handler.class_table
 
 
 class Image(object):
@@ -134,5 +139,18 @@ class Image(object):
         return VMMemory(self)
 
 
-i = Image('Pharo8.0.image')
-mem = i.as_memory()
+def __name__ == "__main__":
+    i = Image('Pharo8.0.image')
+    mem = i.as_memory()
+    e = mem.smallinteger
+    # print(mem.object_at(e[1].array[3]))
+    print(e[1].class_.inst_size)
+    m = e[1][1][3]
+    print(e[1].array_at(3))
+    print(m[1])
+
+    e = mem.special_object_array
+    for _ in range(7277):
+        e = e.next_object
+
+    print(e)
