@@ -139,7 +139,7 @@ class Image(object):
         return VMMemory(self)
 
 
-def __name__ == "__main__":
+if __name__ == "__main__":
     i = Image('Pharo8.0.image')
     mem = i.as_memory()
     e = mem.smallinteger

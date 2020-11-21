@@ -1,3 +1,14 @@
+
+def register_for(o):
+    def func(c):
+        type_list = o if isinstance(o, tuple) else (o,)
+        for t in type_list:
+            SpurObject.spur_implems[t] = c
+        return c
+
+    return func
+
+
 class SubList(object):
     def __init__(self, raw_slots):
         self.raw_slots = raw_slots
@@ -15,7 +26,9 @@ class SubList(object):
 
 
 class SpurObject(object):
+    spur_implems = {}
     header_size = 8
+
     def __init__(self, address, memory):
         self.memory = memory
         self._address = address
@@ -110,6 +123,17 @@ class SpurObject(object):
         return self.number_of_slots
 
 
+@register_for(0)
+class ZeroSized(SpurObject):
+    ...
+
+
+@register_for(1)
+class FixedSized(SpurObject):
+    ...
+
+
+@register_for(2)
 class VariableSizedWO(SpurObject):
     ...
 
@@ -128,6 +152,7 @@ class ClassTable(VariableSizedWO):
         return self.memory.object_at(row_address)
 
 
+@register_for(3)
 class VariableSizedW(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -141,16 +166,11 @@ class VariableSizedW(SpurObject):
     def array_at(self, index):
         return self.memory.object_at(self.array[index].cast("Q")[0])
 
-
-class ZeroSized(SpurObject):
-    ...
-
-class FixedSized(SpurObject):
-    ...
-
+@register_for(4)
 class WeakVariableSized(SpurObject):
     ...
 
+@register_for(tuple(range(9, 24)))
 class Indexable(SpurObject):
     indexable64 = 9
     _bytes = [64, 32, 32, 16, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8]
@@ -180,6 +200,7 @@ class Indexable(SpurObject):
         return f"{super().__repr__()}({self.as_text()})"
 
 
+@register_for(tuple(range(24, 32)))
 class CompiledMethod(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -209,36 +230,3 @@ class CompiledMethod(SpurObject):
 
     def size(self):
         return self.number_of_slots * 8 - 8  # - the format header
-
-
-spur_implems = {
-    0: ZeroSized,
-    1: FixedSized,
-    2: VariableSizedWO,
-    3: VariableSizedW,
-    4: WeakVariableSized,
-    9: Indexable,
-    10: Indexable,
-    11: Indexable,
-    12: Indexable,
-    13: Indexable,
-    14: Indexable,
-    15: Indexable,
-    16: Indexable,
-    17: Indexable,
-    18: Indexable,
-    19: Indexable,
-    20: Indexable,
-    21: Indexable,
-    22: Indexable,
-    23: Indexable,
-    24: CompiledMethod,
-    25: CompiledMethod,
-    26: CompiledMethod,
-    27: CompiledMethod,
-    28: CompiledMethod,
-    29: CompiledMethod,
-    30: CompiledMethod,
-    31: CompiledMethod,
-}
-SpurObject.spur_implems = spur_implems
