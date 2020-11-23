@@ -4,6 +4,7 @@ from bytecodes_new import ByteCodeMap
 
 
 class VM(object):
+    require_switch = [*range(176, 224)]
     def __init__(self, memory, bytecodes_map=ByteCodeMap, debug=False):
         self.memory = memory
         self.debug = debug
@@ -33,8 +34,12 @@ class VM(object):
 
     def decode_execute(self, bytecode):
         result = self.bytecodes_map.execute(bytecode, self.current_context, self)
-        if bytecode in range(208, 224):
-            self.current_context = self.current_context.next
+        context = self.current_context
+        if bytecode in self.require_switch:
+            self.current_context = context.next
+        elif context.from_primitive and context.primitive_success:
+            context.previous.push(context.pop())
+            self.current_context = context.previous
         return result
 
     def lookup(self, cls, selector):
@@ -45,8 +50,8 @@ class VM(object):
                 index = method_dict.array.index(selector)
                 return method_dict.instvars[1][index]
             except ValueError:
-                import ipdb; ipdb.set_trace()
                 # deal with super classes
+                cls = cls[0]
         # send dnu
 
 
@@ -60,11 +65,17 @@ class Context(object):
         self._previous = None
         self._next = None
         self.stack = self._pre_setup(compiled_method)
+        self.primitive_success = True
+        self.from_primitive = False
 
     def _pre_setup(self, compiled_method):
         nil = compiled_method.memory.nil
-        stack = [nil] * compiled_method.num_args
-        stack.extend([nil] * compiled_method.num_temps)
+        num_args = compiled_method.num_args
+        num_temps = compiled_method.num_temps
+        stack = [nil] * num_args
+        stack.extend([nil] * num_temps)
+        self.args = stack[:num_args]
+        self.temporaries = stack[num_args:num_temps]
         return stack
 
     @property

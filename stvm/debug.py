@@ -40,13 +40,19 @@ class STVMDebugger(Cmd):
             stop = size
         if start > bc_start:
             print(f"{colors.fg.yellow}    ...")
-        for i in range(start, stop):
+        i = start
+        while i < stop:
             bc = cm.raw_data[i]
             active = context.pc == i
-            bc_repr = self.vm.bytecodes_map.display(bc, context, active)
+            bc_class = self.vm.bytecodes_map.get(bc)
+            bc_repr = bc_class.display(bc, context, self.vm, active=active, position=i)
+            bc_value = bc
+            for j in cm.raw_data[i+1:i+bc_class.display_jump]:
+                bc_value = (bc_value << 8) + j
             indic = f"{colors.fg.green}*" if active else f"{colors.fg.yellow} "
-            line = f"{indic}   {i}    <{bc:02X}>  {bc_repr}  ({bc})"
+            line = f"{indic}   {i}    <{bc_value:02X}>  {bc_repr}  ({bc})"
             print(line)
+            i += bc_class.display_jump
         if stop < size:
             print(f"{colors.fg.yellow}    ...")
         print(colors.reset)

@@ -16,38 +16,37 @@ class ImmediateInteger(SpurObject):
         return f"{super().__repr__()}({self.value})"
 
     def __eq__(self, other):
-        if other.__class__ is not self.__class__:
-            return False
-        return self.value == other.value
+        return self.value == int(other)
 
     def __hash__(self):
         return object.__hash__(self)
 
     def __le__(self, other):
-        if other.__class__ is not self.__class__:
-            return False
-        return self.value <= other.value
+        return self.value <= int(other)
 
     def __lt__(self, other):
-        if other.__class__ is not self.__class__:
-            return False
-        return self.value < other.value
+        return self.value < int(other)
 
     def __gt__(self, other):
-        if other.__class__ is not self.__class__:
-            return False
-        return self.value > other.value
+        return self.value > int(other)
 
     def __ge__(self, other):
-        if other.__class__ is not self.__class__:
-            return False
-        return self.value >= other.value
+        return self.value >= int(other)
 
     def __and__(self, other):
-        return self.value & other
+        return self.value & int(other)
 
     def __or__(self, other):
-        return self.value | other
+        return self.value | int(other)
 
-    def as_int(self):
+    def __neg__(self):
+        return -self.value
+
+    def __int__(self):
         return self.value
+
+    def __index__(self):
+        return self.value
+
+    def display(self):
+        return str(self.value)

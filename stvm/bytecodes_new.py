@@ -1,13 +1,18 @@
+from primitives_new import execute_primitive, PrimitiveFail
+
 
 class ByteCodeMap(object):
     bytecodes = {}
 
+    def get(self, bytecode):
+        return self.bytecodes.get(bytecode, NotYet)
+
     def execute(self, bytecode, context, vm):
         return self.bytecodes[bytecode].execute(bytecode, context, vm)
 
-    def display(self, bytecode, context, active=False):
+    def display(self, bytecode, context, vm, position=None, active=False):
         try:
-            return self.bytecodes[bytecode].display(bytecode, context, active)
+            return self.bytecodes[bytecode].display(bytecode, context, vm, position, active)
         except KeyError:
             return "NotYet"
 
@@ -19,8 +24,21 @@ def bytecode(numbers, register=ByteCodeMap):
                 register.bytecodes[i] = cls
         else:
             register.bytecodes[numbers] = cls
+        if not getattr(cls, "display_jump", False):
+            cls.display_jump = 1
         return cls
     return inner_register
+
+
+class NotYet(object):
+    display_jump = 1
+    @staticmethod
+    def execute(bytecode, context, vm):
+        raise Exception
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        return f"NotYet"
 
 
 @bytecode(range(64, 96))
@@ -34,10 +52,225 @@ class PushLiteralVariable(object):
         context.pc += 1
 
     @staticmethod
-    def display(bytecode, context, active=False):
+    def display(bytecode, context, vm, position=None, active=False):
         index = bytecode - 64
         association = context.compiled_method.literals[index]
         return f"pushLitVar {association[0].as_text()}"
+
+
+
+
+@bytecode(112)
+class PushReceiver(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.push(context.receiver)
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        receiver = ""
+        if active:
+            receiver = context.receiver
+            receiver = receiver.display()
+        return f"self {receiver}"
+
+
+@bytecode(range(113, 116))
+class PushSpecialObject(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        position = 2 - (bytecode - 113)
+        obj = vm.memory.special_object_array[position]
+        context.push(obj)
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        position = 2 - (bytecode - 113)
+        if position == 0:
+            obj = "nil"
+        elif position == 1:
+            obj = "false"
+        elif position == 2:
+            obj = "true"
+        else:
+            obj = vm.memory.special_object_array[position].name
+        return f"pushConstant {obj}"
+
+
+@bytecode(range(129, 131))
+class OperationLongForm(object):
+    display_jump = 2
+    operation = ['peek', 'pop']
+
+    @classmethod
+    def execute(cls, bytecode, context, vm):
+        cm = context.compiled_method
+        target_encoded = cm.raw_data[context.pc + 1]
+        target = (target_encoded & 0xC0) >> 6
+        index = target_encoded & 0x3F
+
+        label = cls.operation[bytecode - 129]
+        top = getattr(context, label)()
+
+        if target == 3:  # into literal variable
+            association = cm.literals[index]
+            association.instvars[1] = top
+        elif target == 2:
+            print('Cover me!')
+            import ipdb; ipdb.set_trace()
+        elif target == 1:  # temporary location
+            context.temporaries[index] = top
+        else:  # receiver variable
+            context.receiver.instvars[index] = top
+        context.pc += 2
+
+    @classmethod
+    def display(cls, bytecode, context, vm, position=None, active=False):
+        label = cls.operation[bytecode - 129]
+        cm = context.compiled_method
+        target_encoded = cm.raw_data[position + 1]
+        target = (target_encoded & 0xC0) >> 6
+        index = target_encoded & 0x3F
+        if target == 3:
+            label += f"IntoLit {index}"
+        elif target == 2:
+            label += f"Coverme {index}"
+        elif target == 1:
+            label += f"IntoTemp {index}"
+        else:
+            label += f"IntoRcvrVar {index}"
+        if active:
+            top = context.peek()
+            label += f" val={top.display()}"
+        return f"{label}"
+
+
+@bytecode(135)
+class PopStackTop(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.pop()
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        return "pop"
+
+
+@bytecode(136)
+class DuplicateTopStack(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.push(context.peek())
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        top = ""
+        if active:
+            top = context.peek()
+            top = top.display()
+        return f"dup {top}"
+
+
+@bytecode(139)
+class CallPrimitive(object):
+    display_jump = 3
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        cm = context.compiled_method
+        current_pc = context.pc
+        try:
+            pc = context.pc
+            primitive = cm.raw_data[pc + 1: pc + 3].cast("h")[0]
+            nb_params = cm.num_args
+            args = [context.stack[-nb_params - 1]]
+            for i in range(nb_params):
+                args.append(context.stack[-i - 1])
+            context.from_primitive = True
+            result = execute_primitive(primitive, context, vm, *args)
+            context.push(result)
+            return result
+        except PrimitiveFail:
+            context.primitive_success = False
+            context.pc += 3
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        primitive = cm.bytecodes[1:3].cast("h")[0]
+        return f"primitiveCall {primitive}"
+
+
+@bytecode(range(172, 176))
+class LongJumpFalse(object):
+    display_jump = 2
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        pc = context.pc
+        false = vm.memory.false
+        result = context.pop()
+        if result is false:
+            cm = context.compiled_method
+            addr = cm.raw_data[pc + 1] + pc
+            context.pc += addr
+        context.pc += 2
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        addr = cm.raw_data[position + 1] + position
+        res = ""
+        if active:
+            false = vm.memory.false
+            result = context.peek()
+            if result is false:
+                res = "[will jump]"
+            else:
+                res = "[will not jump]"
+        return f"jumpFalse {addr} {res}"
+
+
+@bytecode(range(176, 208))
+class SendSpecialMessage(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        pos = (bytecode - 176) * 2
+        selector = vm.memory.special_symbols[pos]
+
+        nb_params = vm.memory.special_symbols[pos + 1]
+        args = []
+        for i in range(nb_params):
+            args.append(context.pop())
+
+        receiver = context.pop()
+        compiled_method = vm.lookup(receiver.class_, selector)
+        new_context = context.__class__(receiver, compiled_method)
+        new_context.stack[:nb_params] = args
+        context.next = new_context
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        pos = (bytecode - 176) * 2
+        selector = vm.memory.special_symbols[pos].as_text()
+
+        params = ""
+        if active:
+            nb_params = vm.memory.special_symbols[pos + 1]
+            args = []
+            for i in range(nb_params):
+                args.append(f"arg[{i}]={context.stack[-i - 1].display()}>")
+            args = ", ".join(args)
+            receiver = context.stack[-nb_params - 1]
+            receiver = f"rcvr={receiver.display()}"
+            params = f"{receiver} {args}"
+
+        return f"send {selector} {params}"
 
 
 @bytecode(range(208, 224))
@@ -53,51 +286,12 @@ class Send0ArgSelector(object):
         context.pc += 1
 
     @staticmethod
-    def display(bytecode, context, active=False):
+    def display(bytecode, context, vm, position=None, active=False):
         index = bytecode - 208
         receiver = ""
         if active:
             receiver = context.peek()
             # cls_name = receiver.class_
-            receiver = f"rcvr=<0x{id(receiver):X}>"
+            receiver = f"rcvr={receiver.display()}"
         selector = context.compiled_method.literals[index].as_text()
         return f"send {selector} {receiver}"
-
-
-@bytecode(136)
-class DuplicateTopStack(object):
-    @staticmethod
-    def execute(bytecode, context, vm):
-        context.push(context.peek())
-        context.pc += 1
-
-    @staticmethod
-    def display(bytecode, context, active=False):
-        top = ""
-        if active:
-            top = context.peek()
-            top = f"top=<0x{id(top):X}>"
-        return f"dup {top}"
-
-
-@bytecode(range(113, 116))
-class PushSpecialObject(object):
-    @staticmethod
-    def execute(bytecode, context, vm):
-        position = 2 - (bytecode - 113)
-        obj = vm.memory.special_object_array[position]
-        context.push(obj)
-        context.pc += 1
-
-    @staticmethod
-    def display(bytecode, context, active=False):
-        position = 2 - (bytecode - 113)
-        if position == 0:
-            obj = "nil"
-        elif position == 1:
-            obj = "false"
-        elif position == 2:
-            obj = "true"
-        else:
-            obj = vm.memory.special_object_array[position].name
-        return f"pushConstant {obj}"

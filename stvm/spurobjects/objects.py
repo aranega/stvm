@@ -34,10 +34,11 @@ class SpurObject(object):
     spur_implems = {}
     header_size = 8
 
-    def __init__(self, address, memory):
+    def __init__(self, address, memory, kind=None):
         self.memory = memory
         self._address = address
         self.update(address)
+        self.kind = kind
 
     @property
     def address(self):
@@ -82,7 +83,7 @@ class SpurObject(object):
         header = memory[address:address + 8]
         obj_format, _ = cls.decode_basicinfo(header)
         SpurClass = ClassTable if class_table else cls.spur_implems[obj_format]
-        obj = SpurClass(address, memory)
+        obj = SpurClass(address, memory, obj_format)
         return obj
 
     @property
@@ -127,6 +128,15 @@ class SpurObject(object):
             return self[6].as_text()
         except Exception:
             return f"{self[-1][6].as_text()} class"
+
+    def display(self):
+        if self is self.memory.nil:
+            return "nil"
+        if self is self.memory.true:
+            return "true"
+        if self is self.memory.false:
+            return "false"
+        return f"<0x{id(self):X} of {self.class_.name}>"
 
     def __len__(self):
         return self.number_of_slots
@@ -241,4 +251,7 @@ class CompiledMethod(SpurObject):
 
     @property
     def selector(self):
-        return self.literals[len(self.literals) - 1]
+        selector = self.literals[-1]
+        if selector.kind == 3:
+            selector = selector[1]
+        return selector

@@ -26,6 +26,8 @@ class SpurMemoryHandler(object):
         "context_class": 10,
         "largepositiveint": 13,
         "character": 19,
+        "dnuSelector": 20,
+        "special_symbols": 23,
     }
     def __init__(self, memory):
         self.memory = memory
@@ -150,7 +152,7 @@ if __name__ == "__main__":
     print(m[1])
 
     e = mem.special_object_array
-    for _ in range(7277):
+    for _ in range(7278):
         e = e.next_object
 
     print(e)
