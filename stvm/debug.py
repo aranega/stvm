@@ -1,0 +1,119 @@
+from cmd import Cmd
+from vm_new import VM
+
+
+class bcolors:
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+
+class STVMDebugger(Cmd):
+    def __init__(self, vm, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.prompt = '?> '
+        self.vm = vm
+
+    def do_next(self, arg):
+        self.vm.decode_execute(self.vm.fetch())
+        self.do_list("")
+
+    def do_list(self, arg):
+        context = self.vm.current_context
+        cm = context.compiled_method
+        bc_start = cm.initial_pc
+
+        receiver_class = context.receiver.class_.name
+        selector = cm.selector.as_text()
+        print(f"{colors.fg.purple}{receiver_class}>>#{selector}{colors.reset}")
+
+        size = len(cm.raw_data)
+        if arg != "full":
+            start = bc_start if context.pc - 5 < bc_start else context.pc - 5
+            stop = size if context.pc + 5 > size else context.pc + 5
+        else:
+            start = bc_start
+            stop = size
+        if start > bc_start:
+            print(f"{colors.fg.yellow}    ...")
+        for i in range(start, stop):
+            bc = cm.raw_data[i]
+            active = context.pc == i
+            bc_repr = self.vm.bytecodes_map.display(bc, context, active)
+            indic = f"{colors.fg.green}*" if active else f"{colors.fg.yellow} "
+            line = f"{indic}   {i}    <{bc:02X}>  {bc_repr}  ({bc})"
+            print(line)
+        if stop < size:
+            print(f"{colors.fg.yellow}    ...")
+        print(colors.reset)
+
+
+    def do_print_context(self, arg):
+        context = self.vm.current_context
+        print(context)
+        print("Compiled Method", context.compiled_method.selector.as_text())
+        print("Stack", context.stack)
+        print("PC", context.pc)
+
+    def do_where(self, arg):
+        context = self.vm.current_context
+        current = context
+        while context != None:
+            line = colors.fg.purple
+            selector = context.compiled_method.selector.as_text()
+            indic = f"{colors.reset}{colors.fg.purple} "
+            if context is current:
+                indic = f"{colors.bold}*"
+            line += f"{indic}   #{selector} rcvr=<0x{id(context.receiver):X}>"
+            print(line)
+            context = context.previous
+        print(colors.reset)
+
+    def do_quit(self, arg):
+        "Quit the VM debugger"
+        return True
+
+    do_EOF = do_quit
+    do_n = do_next
+    do_l = do_list
+
+class colors:
+    reset='\033[0m'
+    bold='\033[01m'
+    disable='\033[02m'
+    underline='\033[04m'
+    reverse='\033[07m'
+    strikethrough='\033[09m'
+    invisible='\033[08m'
+    class fg:
+        black='\033[30m'
+        red='\033[31m'
+        green='\033[32m'
+        orange='\033[33m'
+        blue='\033[34m'
+        purple='\033[35m'
+        cyan='\033[36m'
+        lightgrey='\033[37m'
+        darkgrey='\033[90m'
+        lightred='\033[91m'
+        lightgreen='\033[92m'
+        yellow='\033[93m'
+        lightblue='\033[94m'
+        pink='\033[95m'
+        lightcyan='\033[96m'
+    class bg:
+        black='\033[40m'
+        red='\033[41m'
+        green='\033[42m'
+        orange='\033[43m'
+        blue='\033[44m'
+        purple='\033[45m'
+        cyan='\033[46m'
+        lightgrey='\033[47m'
+
+if __name__ == '__main__':
+    STVMDebugger(VM.new('Pharo8.0.image')).cmdloop()

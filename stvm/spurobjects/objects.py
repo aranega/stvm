@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 
 def register_for(o):
     def func(c):
@@ -9,17 +11,20 @@ def register_for(o):
     return func
 
 
-class SubList(object):
-    def __init__(self, raw_slots):
+class SubList(Sequence):
+    def __init__(self, raw_slots, memory):
         self.raw_slots = raw_slots
+        self.memory = memory
 
     def __getitem__(self, i):
         if isinstance(i, slice):
             s = i.start and i.start * 8
             e = i.stop and i.stop * 8
-            return self.__class__(self.raw_slots[s:e:i.step])
+            return self.__class__(self.raw_slots[s:e:i.step], self.memory)
+        if i < 0:
+            i = len(self) + i
         i = i * 8
-        return self.raw_slots[i:i + 8]
+        return self.memory.object_at(self.raw_slots[i:i + 8].cast("Q")[0])
 
     def __len__(self):
         return len(self.raw_slots) // 8
@@ -64,7 +69,7 @@ class SpurObject(object):
         self.header2 = self.header[4:8]
         self.h2 = self.header2.cast("I")[0]
         self.raw_slots = self.raw_object[8:]
-        self.slots = SubList(self.raw_slots)
+        self.slots = SubList(self.raw_slots, mem)
         self.object_format = (self.h1 & 0x1F000000) >> 24
         self.class_index = self.h1 & 0x3FFFFF
         self.is_immutable = (self.h1 & 0x600000) > 0
@@ -106,7 +111,7 @@ class SpurObject(object):
         return (object_format, number_of_slots)
 
     def __getitem__(self, index):
-        return self.memory.object_at(self.slots[index].cast("Q")[0])
+        return self.slots[index]
 
     @property
     def inst_size(self):
@@ -116,8 +121,12 @@ class SpurObject(object):
     def class_(self):
         return self.memory.class_table[self.class_index]
 
-    def slot(self, index):
-        return self[index]
+    @property
+    def name(self):
+        try:
+            return self[6].as_text()
+        except Exception:
+            return f"{self[-1][6].as_text()} class"
 
     def __len__(self):
         return self.number_of_slots
@@ -146,10 +155,8 @@ class ClassTable(VariableSizedWO):
     def __getitem__(self, index):
         page = index // 1024
         row = index % 1024
-        line_address = self.slots[page].cast("Q")[0]
-        line = self.memory.object_at(line_address)
-        row_address = line.slots[row].cast("Q")[0]
-        return self.memory.object_at(row_address)
+        line = self.slots[page]
+        return line.slots[row]
 
 
 @register_for(3)
@@ -160,11 +167,11 @@ class VariableSizedW(SpurObject):
         self.instvars = self.slots[0:nb_instvars]
         self.array = self.slots[nb_instvars:]
 
-    def instvar(self, index):
-        return self.memory.object_at(self.instvars[index].cast("Q")[0])
-
-    def array_at(self, index):
-        return self.memory.object_at(self.array[index].cast("Q")[0])
+    # def instvar(self, index):
+    #     return self.memory.object_at(self.instvars[index].cast("Q")[0])
+    #
+    # def array_at(self, index):
+    #     return self.memory.object_at(self.array[index].cast("Q")[0])
 
 @register_for(4)
 class WeakVariableSized(SpurObject):
@@ -183,18 +190,18 @@ class Indexable(SpurObject):
         self.nb_empty_cases = self._shift[shift]
 
     def __getitem__(self, index):
-        line = index // self.nb_bytes
+        line = (index // self.nb_bytes) * self.nb_bytes
         row = index % self.nb_bytes
-        return self.slots[line][row]
+        return self.raw_slots[line + row]
 
     def __iter__(self):
-        return iter((self[i] for i in range(len(self))))
+        return iter(self[i] for i in range(len(self)))
 
     def __len__(self):
-        return self.number_of_slots * self.nb_bytes - self.nb_empty_cases
+        return len(self.raw_slots) - self.nb_empty_cases
 
     def as_text(self):
-        return "".join((chr(i) for i in self))
+        return "".join(chr(i) for i in self)
 
     def __repr__(self):
         return f"{super().__repr__()}({self.as_text()})"
@@ -208,7 +215,8 @@ class CompiledMethod(SpurObject):
         num_literals = method_format & 0x7FFF
         self.initial_pc = (num_literals + 1) * 8
 
-        raw = self.raw_object[8:]
+        self.raw_data = self.raw_object[8:]
+        raw = self.raw_data
         pc = self.initial_pc
         if method_format & 0x10000:
             primitive = raw[pc + 1] + (raw[pc + 2] << 8)
@@ -225,8 +233,12 @@ class CompiledMethod(SpurObject):
         self.bytecodes = raw[num_literals * 8 + 8:-1]
         self.trailer_byte = raw[-1]
 
-    def literal_at(self, index):
-        return self.memory.object_at(self.literals[index].cast("Q")[0])
+    # def literal_at(self, index):
+    #     return self.memory.object_at(self.literals[index].cast("Q")[0])
 
     def size(self):
         return self.number_of_slots * 8 - 8  # - the format header
+
+    @property
+    def selector(self):
+        return self.literals[len(self.literals) - 1]
