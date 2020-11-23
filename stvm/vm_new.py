@@ -6,15 +6,16 @@ from bytecodes_new import ByteCodeMap
 class VM(object):
     require_forward_switch = [*range(176, 256)]
     require_backward_switch = [*range(121, 125)]
-    def __init__(self, memory, bytecodes_map=ByteCodeMap, debug=False):
-        self.memory = memory
+    def __init__(self, image, bytecodes_map=ByteCodeMap, debug=False):
+        self.image = image
+        self.memory = image.as_memory()
         self.debug = debug
         self.bytecodes_map = bytecodes_map()
         self.current_context = self.initial_context()
 
     @classmethod
     def new(cls, file_name):
-        return cls(Image(file_name).as_memory())
+        return cls(Image(file_name))
 
     def run(self):
         ...

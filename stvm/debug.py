@@ -16,8 +16,13 @@ class bcolors:
 class STVMDebugger(Cmd):
     def __init__(self, vm, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.prompt = '?> '
+        self.intro = 'Experimental SmalltalkVM debugger\n'
+        self.intro += f'Loaded image: {vm.image.filename}\n'
+        self.intro += f'Image VM version: {vm.image.image_version}\n'
+        self.intro += f'Fetching active context: "{vm.current_context.compiled_method.selector.as_text()}"\n'
+        self.prompt = '? > '
         self.vm = vm
+        self.cmdqueue = ['list']
 
     def do_step(self, arg):
         self.vm.decode_execute(self.vm.fetch())
