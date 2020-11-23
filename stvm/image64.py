@@ -40,10 +40,9 @@ class SpurMemoryHandler(object):
         setattr(self.memory, "special_object_array", self.special_object_array)
 
     def init_smallints(self):
-        for i in range(0, 255):
-            addr = struct.unpack("q", struct.pack("q", ((i << 3) & 0xFFFFFFFF) | 0x01 ))
-            addr = addr[0]
-            self.cache[addr] = ImmediateInteger(addr, self.memory)
+        for i in range(-255, 255):
+            imm = ImmediateInteger.create(i, self.memory)
+            self.cache[imm.address] = imm
 
     @property
     def special_object_array(self):

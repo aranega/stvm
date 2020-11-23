@@ -6,8 +6,14 @@ class ImmediateInteger(SpurObject):
     number_of_slots = 0
 
     def update(self, new_address):
-        self.value = struct.unpack("q", struct.pack("q", new_address))[0] >> 3
+        self.value = struct.unpack("q", struct.pack("Q", new_address))[0] >> 3
         self.class_ = self.memory.smallinteger
+
+    @classmethod
+    def create(cls, i, memory):
+        addr = struct.unpack("Q", struct.pack("q", ((i << 3)) | 0x01 ))
+        addr = addr[0]
+        return cls(addr, memory)
 
     def __getitem__(self, index):
         raise TypeError("ImmediateInteger don't have slots")

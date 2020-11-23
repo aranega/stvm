@@ -4,7 +4,8 @@ from bytecodes_new import ByteCodeMap
 
 
 class VM(object):
-    require_switch = [*range(176, 224)]
+    require_forward_switch = [*range(176, 256)]
+    require_backward_switch = [*range(121, 125)]
     def __init__(self, memory, bytecodes_map=ByteCodeMap, debug=False):
         self.memory = memory
         self.debug = debug
@@ -35,9 +36,12 @@ class VM(object):
     def decode_execute(self, bytecode):
         result = self.bytecodes_map.execute(bytecode, self.current_context, self)
         context = self.current_context
-        if bytecode in self.require_switch:
+        if bytecode in self.require_forward_switch:
             self.current_context = context.next
         elif context.from_primitive and context.primitive_success:
+            context.previous.push(context.pop())
+            self.current_context = context.previous
+        elif bytecode in self.require_backward_switch:
             context.previous.push(context.pop())
             self.current_context = context.previous
         return result
@@ -74,9 +78,16 @@ class Context(object):
         num_temps = compiled_method.num_temps
         stack = [nil] * num_args
         stack.extend([nil] * num_temps)
-        self.args = stack[:num_args]
-        self.temporaries = stack[num_args:num_temps]
         return stack
+
+    @property
+    def args(self):
+        return self.stack[:self.compiled_method.num_args]
+
+    @property
+    def temps(self):
+        cm = self.compiled_method
+        return self.stack[cm.num_args: cm.num_args + cm.num_temps]
 
     @property
     def next(self):

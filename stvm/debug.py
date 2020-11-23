@@ -1,4 +1,5 @@
 from cmd import Cmd
+from pprint import pprint
 from vm_new import VM
 
 
@@ -18,9 +19,49 @@ class STVMDebugger(Cmd):
         self.prompt = '?> '
         self.vm = vm
 
-    def do_next(self, arg):
+    def do_step(self, arg):
         self.vm.decode_execute(self.vm.fetch())
         self.do_list("")
+
+    def do_stop(self, arg):
+        bc = int(arg)
+        current = self.vm.fetch()
+        while current != bc:
+            self.vm.decode_execute(current)
+            current = self.vm.fetch()
+        self.do_list("")
+
+    def do_continue(self, arg):
+        try:
+            while True:
+                self.vm.decode_execute(self.vm.fetch())
+        except Exception as e:
+            try:
+                self.do_list("full")
+            except Exception:
+                import ipdb; ipdb.set_trace()
+
+            print(f"{colors.fg.red}Stopped on exception >> {e}")
+            print(colors.reset)
+
+    def do_next(self, arg):
+        context = self.vm.current_context
+        try:
+            while "not same context":
+                self.vm.decode_execute(self.vm.fetch())
+                if self.vm.current_context is context:
+                    break
+        except Exception:
+            self.do_print_context("")
+            self.do_metadebug("")
+        self.do_list("")
+
+    def do_metadebug(self, arg):
+        context = self.vm.current_context
+        cm = context.compiled_method
+        self.do_list("")
+        import ipdb; ipdb.set_trace()
+
 
     def do_list(self, arg):
         context = self.vm.current_context
@@ -31,7 +72,7 @@ class STVMDebugger(Cmd):
         selector = cm.selector.as_text()
         print(f"{colors.fg.purple}{receiver_class}>>#{selector}{colors.reset}")
 
-        size = len(cm.raw_data)
+        size = cm.size() - cm.trailer.size
         if arg != "full":
             start = bc_start if context.pc - 5 < bc_start else context.pc - 5
             stop = size if context.pc + 5 > size else context.pc + 5
@@ -40,7 +81,10 @@ class STVMDebugger(Cmd):
             stop = size
         if start > bc_start:
             print(f"{colors.fg.yellow}    ...")
-        i = start
+        i = bc_start
+        while i < start:
+            bc_class = self.vm.bytecodes_map.get(cm.raw_data[i])
+            i += bc_class.display_jump
         while i < stop:
             bc = cm.raw_data[i]
             active = context.pc == i
@@ -50,7 +94,7 @@ class STVMDebugger(Cmd):
             for j in cm.raw_data[i+1:i+bc_class.display_jump]:
                 bc_value = (bc_value << 8) + j
             indic = f"{colors.fg.green}*" if active else f"{colors.fg.yellow} "
-            line = f"{indic}   {i}    <{bc_value:02X}>  {bc_repr}  ({bc})"
+            line = f"{indic}   {i:3}    <{bc_value:02X}>  {bc_repr}  ({bc})"
             print(line)
             i += bc_class.display_jump
         if stop < size:
@@ -60,10 +104,16 @@ class STVMDebugger(Cmd):
 
     def do_print_context(self, arg):
         context = self.vm.current_context
-        print(context)
-        print("Compiled Method", context.compiled_method.selector.as_text())
-        print("Stack", context.stack)
+        print("Current context")
+        print("method  ", context.compiled_method.selector.as_text())
+        print("stack:   [", *[s.display() for s in context.stack], ']')
+        print("args:    [", *[s.display() for s in context.args], ']')
+        print("temps:   [", *[s.display() for s in context.temps], ']')
         print("PC", context.pc)
+        print("method  size", context.compiled_method.size())
+        print("method  size", len(context.compiled_method))
+        print("method  bclen", len(context.compiled_method.bytecodes))
+
 
     def do_where(self, arg):
         context = self.vm.current_context
@@ -84,8 +134,9 @@ class STVMDebugger(Cmd):
         return True
 
     do_EOF = do_quit
-    do_n = do_next
+    do_s = do_step
     do_l = do_list
+    do_n = do_next
 
 class colors:
     reset='\033[0m'

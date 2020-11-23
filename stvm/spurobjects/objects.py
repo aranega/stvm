@@ -225,7 +225,7 @@ class CompiledMethod(SpurObject):
         num_literals = method_format & 0x7FFF
         self.initial_pc = (num_literals + 1) * 8
 
-        self.raw_data = self.raw_object[8:]
+        self.raw_data = self.raw_object[8:8 + self.size()]
         raw = self.raw_data
         pc = self.initial_pc
         if method_format & 0x10000:
@@ -240,14 +240,12 @@ class CompiledMethod(SpurObject):
         self.frame_size = 56 if method_format & 0x20000 else 16
         self.primitive = primitive
         self.literals = self.slots[1:num_literals]
-        self.bytecodes = raw[num_literals * 8 + 8:-1]
-        self.trailer_byte = raw[-1]
-
-    # def literal_at(self, index):
-    #     return self.memory.object_at(self.literals[index].cast("Q")[0])
+        # self.trailer_byte = raw[-1]
+        self.trailer = MethodTrailer(raw[-1], self)
+        self.bytecodes = raw[num_literals * 8 + 8:-self.trailer.size]
 
     def size(self):
-        return self.number_of_slots * 8 - 8  # - the format header
+        return self.number_of_slots * 8 - (self.kind - 24)
 
     @property
     def selector(self):
@@ -255,3 +253,59 @@ class CompiledMethod(SpurObject):
         if selector.kind == 3:
             selector = selector[1]
         return selector
+
+
+class MethodTrailer(object):
+    def __init__(self, trailer_byte, compiled_method):
+        self.compiled_method = compiled_method
+        self.trailer_byte = trailer_byte
+        self.decode()
+
+    def decode_length(self):
+        num_bytes = self.trailer_byte & 0x03
+        raw = self.compiled_method.raw_data
+        length = int.from_bytes(self.compiled_method.raw_data[-num_bytes-1:], byteorder="little")
+        self.size = length + num_bytes
+        return length
+
+    def decode_notrailer(self):
+        return 4
+
+    def decode_sourcepointer(self):
+        self.size = 4
+
+    def decode_varlengthsourcepointer(self):
+        method_size = self.compiled_method.size()
+        pos = method_size - 1
+        self.size = method_size - pos
+        import ipdb; ipdb.set_trace()
+
+    def decode(self):
+        self.data = None
+        self.size = None
+        flag_byte = self.trailer_byte
+        kind = flag_byte >> 2
+        if kind == 0b000000:
+            self.size = 1
+        elif kind == 0b000001:
+            self.decode_length()
+        elif kind == 0b000010:
+            self.decode_length()
+        elif kind == 0b000011:
+            self.decode_length()
+        elif kind == 0b000100:
+            self.size = 1
+        elif kind == 0b000101:
+            self.decode_length()
+        elif kind == 0b000110:
+            self.decode_length()
+        elif kind == 0b000111:
+            self.decode_length()
+        elif kind == 0b000111:
+            self.decode_length()
+        elif kind == 0b001000:
+            import ipdb; ipdb.set_trace()
+        elif kind == 0b001001:
+            self.size = 2
+        elif kind == 0b111111:
+            self.size = 4

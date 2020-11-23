@@ -1,4 +1,5 @@
 from primitives_new import execute_primitive, PrimitiveFail
+from spurobjects.immediate import ImmediateInteger
 
 
 class ByteCodeMap(object):
@@ -8,13 +9,10 @@ class ByteCodeMap(object):
         return self.bytecodes.get(bytecode, NotYet)
 
     def execute(self, bytecode, context, vm):
-        return self.bytecodes[bytecode].execute(bytecode, context, vm)
+        return self.get(bytecode).execute(bytecode, context, vm)
 
     def display(self, bytecode, context, vm, position=None, active=False):
-        try:
-            return self.bytecodes[bytecode].display(bytecode, context, vm, position, active)
-        except KeyError:
-            return "NotYet"
+        return self.get(bytecode).display(bytecode, context, vm, position, active)
 
 
 def bytecode(numbers, register=ByteCodeMap):
@@ -34,11 +32,70 @@ class NotYet(object):
     display_jump = 1
     @staticmethod
     def execute(bytecode, context, vm):
-        raise Exception
+        raise NotImplementedError(f"Bytecode ({bytecode}) not yet implemented")
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
         return f"NotYet"
+
+
+@bytecode(range(0, 16))
+class PushReceiverVariable(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        index = bytecode
+        receiver = context.receiver
+        value = receiver.slots[index]
+        context.push(value)
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        index = bytecode
+        value = ""
+        if active:
+            receiver = context.receiver
+            value = receiver.slots[index]
+            value = f"val={value.display()}"
+        return f"pushRcvrInstvar {index} {value}"
+
+
+@bytecode(range(16, 32))
+class PushTemp(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        num = bytecode - 16
+        context.push(context.temps[num])
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        num = bytecode - 16
+        temp = ""
+        if active:
+            temp = context.temps[num].display()
+            temp = f"tmp={temp}"
+        return f"pushTemp {num} {temp}"
+
+
+@bytecode(range(32, 64))
+class PushLiteralConstant(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        index = bytecode - 32
+        constant = context.compiled_method.literals[index]
+        context.push(constant)
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        index = bytecode - 32
+        constant = context.compiled_method.literals[index]
+        try:
+            constant = f'"{constant.as_text()}"'
+        except Exception:
+            constant = constant.display()
+        return f"pushConstant {constant} "
 
 
 @bytecode(range(64, 96))
@@ -55,9 +112,10 @@ class PushLiteralVariable(object):
     def display(bytecode, context, vm, position=None, active=False):
         index = bytecode - 64
         association = context.compiled_method.literals[index]
-        return f"pushLitVar {association[0].as_text()}"
+        if isinstance(association[0], int):
+            import ipdb; ipdb.set_trace()
 
-
+        return f"pushLitVar {association[0].display()}"
 
 
 @bytecode(112)
@@ -99,6 +157,70 @@ class PushSpecialObject(object):
         return f"pushConstant {obj}"
 
 
+@bytecode(range(116, 120))
+class PushInt(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        value = bytecode - 117
+        immediate = ImmediateInteger.create(value, vm.memory)
+        context.push(immediate)
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        value = bytecode - 117
+        return f"pushInt {value}"
+
+
+@bytecode(121)
+class ReturnTrue(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.push(vm.memory.true)
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        return f"return true"
+
+
+@bytecode(122)
+class ReturnFalse(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.push(vm.memory.false)
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        return f"return false"
+
+
+@bytecode(123)
+class ReturnNil(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.push(vm.memory.nil)
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        return f"return nil"
+
+
+@bytecode(124)
+class Return(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        if context.outer_context:
+            context.previous_context = context.outer_context.previous_context
+
+    @classmethod
+    def display(cls, bytecode, context, vm, position=None, active=False):
+        res = ""
+        if active:
+            res = context.peek()
+            res = f"ret={res.display()}"
+        return f"returnTop {res}"
+
+
 @bytecode(range(129, 131))
 class OperationLongForm(object):
     display_jump = 2
@@ -121,7 +243,7 @@ class OperationLongForm(object):
             print('Cover me!')
             import ipdb; ipdb.set_trace()
         elif target == 1:  # temporary location
-            context.temporaries[index] = top
+            context.temps[index] = top
         else:  # receiver variable
             context.receiver.instvars[index] = top
         context.pc += 2
@@ -187,7 +309,7 @@ class CallPrimitive(object):
             pc = context.pc
             primitive = cm.raw_data[pc + 1: pc + 3].cast("h")[0]
             nb_params = cm.num_args
-            args = [context.stack[-nb_params - 1]]
+            args = [context.receiver]
             for i in range(nb_params):
                 args.append(context.stack[-i - 1])
             context.from_primitive = True
@@ -205,6 +327,29 @@ class CallPrimitive(object):
         return f"primitiveCall {primitive}"
 
 
+@bytecode(range(152, 160))
+class JumpFalse(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        if context.pop() is vm.memory.false:
+            addr = (bytecode - 151) + 1
+            context.pc += addr
+            return
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        addr = position + (bytecode - 151) + 1
+        result = ""
+        if active:
+            false = vm.memory.false
+            if context.peek() is false:
+                result = "[will jump]"
+            else:
+                result = "[will not jump]"
+        return f"jumpFalse {addr} {result}"
+
+
 @bytecode(range(172, 176))
 class LongJumpFalse(object):
     display_jump = 2
@@ -216,14 +361,15 @@ class LongJumpFalse(object):
         result = context.pop()
         if result is false:
             cm = context.compiled_method
-            addr = cm.raw_data[pc + 1] + pc
-            context.pc += addr
+            addr = cm.raw_data[pc + 1]
+            context.pc += addr + 2
+            return
         context.pc += 2
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
         cm = context.compiled_method
-        addr = cm.raw_data[position + 1] + position
+        addr = cm.raw_data[position + 1] + position + 2
         res = ""
         if active:
             false = vm.memory.false
@@ -295,3 +441,61 @@ class Send0ArgSelector(object):
             receiver = f"rcvr={receiver.display()}"
         selector = context.compiled_method.literals[index].as_text()
         return f"send {selector} {receiver}"
+
+
+@bytecode(range(224, 240))
+class Send1ArgSelector(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        index = bytecode - 224
+        arg0 = context.pop()
+        receiver = context.pop()
+        selector = context.compiled_method.literals[index]
+        compiled_method = vm.lookup(receiver.class_, selector)
+        new_context = context.__class__(receiver, compiled_method)
+        new_context.stack[0] = arg0
+
+        context.next = new_context
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        index = bytecode - 224
+        selector = context.compiled_method.literals[index]
+        args = ""
+        if active:
+            receiver = context.stack[-2]
+            receiver = f"rcvr={receiver.display()}"
+            args = context.stack[-1].display()
+            args = f"arg={args}"
+        return f"send {selector.as_text()} {args}"
+
+
+@bytecode(range(240, 256))
+class Send2ArgSelector(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        index = bytecode - 240
+        arg1 = context.pop()
+        arg0 = context.pop()
+        receiver = context.pop()
+        selector = context.compiled_method.literals[index]
+        compiled_method = vm.lookup(receiver.class_, selector)
+        new_context = context.__class__(receiver, compiled_method)
+        new_context.stack[0] = arg0
+        new_context.stack[1] = arg1
+
+        context.next = new_context
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        index = bytecode - 240
+        selector = context.compiled_method.literals[index]
+        args = ""
+        if active:
+            receiver = context.stack[-3]
+            receiver = f"rcvr={receiver.display()}"
+            args = context.stack[-1].display(), context.stack[-2].display()
+            args = f"args={','.join(args)}"
+        return f"send {selector.as_text()} {args}"
