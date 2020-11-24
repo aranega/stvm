@@ -4,7 +4,7 @@ from bytecodes_new import ByteCodeMap
 
 
 class VM(object):
-    require_forward_switch = [*range(176, 256)]
+    require_forward_switch = [133, *range(176, 256)]
     require_backward_switch = [*range(121, 125)]
     def __init__(self, image, bytecodes_map=ByteCodeMap, debug=False):
         self.image = image
@@ -76,9 +76,10 @@ class Context(object):
     def _pre_setup(self, compiled_method):
         nil = compiled_method.memory.nil
         num_args = compiled_method.num_args
+        self.start_args = 0
+        self.start_temps = num_args
         num_temps = compiled_method.num_temps
-        stack = [nil] * num_args
-        stack.extend([nil] * num_temps)
+        stack = [nil] * num_temps
         return stack
 
     @property
@@ -88,7 +89,7 @@ class Context(object):
     @property
     def temps(self):
         cm = self.compiled_method
-        return self.stack[cm.num_args: cm.num_args + cm.num_temps]
+        return self.stack[cm.num_args: cm.num_temps]
 
     @property
     def next(self):
@@ -109,8 +110,14 @@ class Context(object):
         context._next = self
 
     @classmethod
-    def from_smalltalk_context(cls, context):
-        return cls(context.instvars[5], context.instvars[3])
+    def from_smalltalk_context(cls, st_context):
+        cm = st_context.instvars[3]
+        context = cls(st_context.instvars[5], cm)
+        stackp = st_context[2]
+        context.stack[:] = st_context.array[:stackp.value]
+        context.pc = st_context[1].value
+        context.outer_context = st_context[4]
+        return context
 
     def fetch_bytecode(self):
         return self.compiled_method.raw_data[self.pc]
@@ -124,6 +131,34 @@ class Context(object):
     def peek(self):
         return self.stack[-1]
 
+    def block_closure(self, start):
+        return BlockClosure(self, start)
+
+
+class BlockClosure(object):
+    def __init__(self, context, start):
+        self.outer_context = context
+        cm = context.compiled_method
+        info = cm.raw_data[start + 1]
+        self.num_copied = (info & 0xF0) >> 4
+        self.num_args = info & 0x0F
+        size = int.from_bytes(cm.raw_data[start + 2: start + 4], byteorder="big")
+
+        copied = [self.outer_context.pop() for i in range(self.num_copied)]
+        copied.reverse()
+        self.start = start + 4
+        self.pc = self.start
+        self.size = size
+
+        nil = cm.memory.nil
+        # num_temps = compiled_method.num_temps
+        stack = [nil] * self.num_args
+        stack.extend(copied)
+        # stack.extend([nil] * num_temps)
+        self.stack = stack
+
+    def display(self):
+        return f"<closure [{self.start}-{self.start + self.size - 1}] <args={self.num_args}, copied={self.num_copied}>>"
 
 if __name__ == "__main__":
     vm = VM.new("Pharo8.0.image")

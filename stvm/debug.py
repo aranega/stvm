@@ -22,10 +22,11 @@ class STVMDebugger(Cmd):
         self.intro += f'Fetching active context: "{vm.current_context.compiled_method.selector.as_text()}"\n'
         self.prompt = '? > '
         self.vm = vm
-        self.cmdqueue = ['list']
+        self.cmdqueue = ['stack', 'list']
 
     def do_step(self, arg):
         self.vm.decode_execute(self.vm.fetch())
+        self.do_stack("")
         self.do_list("")
 
     def do_stop(self, arg):
@@ -51,19 +52,17 @@ class STVMDebugger(Cmd):
 
     def do_next(self, arg):
         context = self.vm.current_context
-        try:
-            while "not same context":
-                self.vm.decode_execute(self.vm.fetch())
-                if self.vm.current_context is context:
-                    break
-        except Exception:
-            self.do_print_context("")
-            self.do_metadebug("")
+        while "not same context":
+            self.vm.decode_execute(self.vm.fetch())
+            if self.vm.current_context is context:
+                break
+        self.do_stack("")
         self.do_list("")
 
     def do_metadebug(self, arg):
         context = self.vm.current_context
         cm = context.compiled_method
+        self.do_stack("")
         self.do_list("")
         import ipdb; ipdb.set_trace()
 
@@ -107,17 +106,100 @@ class STVMDebugger(Cmd):
         print(colors.reset)
 
 
+    def do_stack(self, arg):
+        stack = self.vm.current_context.stack
+        if arg.startswith("top"):
+            self.navigate(stack[-1], arg[3:])
+            return
+        print(f"{colors.fg.purple}Context stack")
+        if not stack:
+            print(f"    {colors.fg.orange}empty   -->")
+            return
+        print(f"    {colors.fg.orange}top     -->  {stack[-1].display()}")
+        sub = stack[-2::-1]
+        size = len(sub)
+        args = self.vm.current_context.compiled_method.num_args
+        temps = self.vm.current_context.compiled_method.num_temps
+        for i, e in enumerate(sub):
+            i = size - i -1
+            prefix = f"    {colors.fg.darkgrey}             "
+            if i < args:
+                prefix = f"    {colors.fg.lightblue}arg  {i:2} -->  "
+            elif i < temps:
+                prefix = f"    {colors.fg.cyan}temp {i:2} -->  "
+            print(f"{prefix}{e.display()}{colors.reset}")
+
     def do_print_context(self, arg):
         context = self.vm.current_context
         print("Current context")
         print("method  ", context.compiled_method.selector.as_text())
+        print("receiver", context.receiver.display())
         print("stack:   [", *[s.display() for s in context.stack], ']')
         print("args:    [", *[s.display() for s in context.args], ']')
         print("temps:   [", *[s.display() for s in context.temps], ']')
         print("PC", context.pc)
-        print("method  size", context.compiled_method.size())
-        print("method  size", len(context.compiled_method))
-        print("method  bclen", len(context.compiled_method.bytecodes))
+
+    def do_active_process(self, arg):
+        process = self.vm.active_process
+        self.navigate(process, arg)
+
+    def do_receiver(self, arg):
+        context = self.vm.current_context
+        receiver = context.receiver
+        self.navigate(receiver, arg)
+
+    def navigate(self, receiver, arg):
+        args = [a for a in arg.strip().split(" ") if a]
+        while args:
+            if receiver.kind in range(9, 24):
+                print(f"{colors.fg.red}Cannot navigate slots of Indexable objects{colors.reset}")
+                break
+            if args[0] == "slot":
+                number = args[1]
+                receiver = receiver.slots[int(number)]
+                args = args[2:]
+            elif args[0] == "instvar":
+                number = args[1]
+                receiver = receiver.instvars[int(number)]
+                args = args[2:]
+            elif args[0] == "array":
+                number = args[1]
+                receiver = receiver.array[int(number)]
+                args = args[2:]
+            elif args[0] == 'class':
+                receiver = receiver.class_
+                args = args[1:]
+        self.print_object(receiver)
+
+    def print_object(self, receiver):
+        print("receiver", receiver.display())
+        print("object type", receiver.__class__.__name__, "kind", receiver.kind)
+        print("class", receiver.class_.name)
+        print("slots")
+        if receiver.kind in range(9, 24):
+            for i in range(len(receiver)):
+                if i > 0 and i % 8 == 0:
+                    print()
+                print("", hex(receiver[i]), end="")
+            print()
+            print(f'text "{receiver.as_text()}"')
+            return
+        for i in range(len(receiver.slots)):
+            print(f"{i:2}   ", receiver[i].display())
+        if hasattr(receiver, "instvars"):
+            print("instvar in slots")
+            for i in range(len(receiver.instvars)):
+                print(f"{i:2}   ", receiver.instvars[i].display())
+        if hasattr(receiver, "array"):
+            print("array in slots")
+            for i in range(len(receiver.array)):
+                print(f"{i:2}   ", receiver.array[i].display())
+
+    def do_print(self, arg):
+        if arg == "receiver":
+            self.do_receiver("")
+        elif arg == "context":
+            self.do_print_context("")
 
 
     def do_where(self, arg):

@@ -65,7 +65,7 @@ class PushTemp(object):
     @staticmethod
     def execute(bytecode, context, vm):
         num = bytecode - 16
-        context.push(context.temps[num])
+        context.push(context.stack[num])
         context.pc += 1
 
     @staticmethod
@@ -73,9 +73,9 @@ class PushTemp(object):
         num = bytecode - 16
         temp = ""
         if active:
-            temp = context.temps[num].display()
+            temp = context.stack[num].display()
             temp = f"tmp={temp}"
-        return f"pushTemp {num} {temp}"
+        return f"pushTempOrArg {num} {temp}"
 
 
 @bytecode(range(32, 64))
@@ -112,10 +112,26 @@ class PushLiteralVariable(object):
     def display(bytecode, context, vm, position=None, active=False):
         index = bytecode - 64
         association = context.compiled_method.literals[index]
-        if isinstance(association[0], int):
-            import ipdb; ipdb.set_trace()
-
         return f"pushLitVar {association[0].display()}"
+
+
+@bytecode(range(104, 112))
+class PopIntoTemp(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        index = bytecode - 104
+        value = context.pop()
+        context.stack[index] = value
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        index = bytecode - 104
+        val = ""
+        if active:
+            val = context.peek()
+            val = f"val={val.display()}"
+        return f"popIntoTemp {index} {val}"
 
 
 @bytecode(112)
@@ -243,9 +259,11 @@ class OperationLongForm(object):
             print('Cover me!')
             import ipdb; ipdb.set_trace()
         elif target == 1:  # temporary location
-            context.temps[index] = top
+            context.stack[index] = top
         else:  # receiver variable
             context.receiver.instvars[index] = top
+            import ipdb; ipdb.set_trace()
+
         context.pc += 2
 
     @classmethod
@@ -267,6 +285,38 @@ class OperationLongForm(object):
             top = context.peek()
             label += f" val={top.display()}"
         return f"{label}"
+
+
+@bytecode(133)
+class SuperSend(object):
+    @staticmethod
+    def execute(bytecote, context, vm):
+        cm = context.compiled_method
+        frmt = cm.raw_data[context.pc + 1]
+        nb_args = (frmt & 0b11100000) >> 5
+        index = frmt & 0b00011111
+        selector = cm.literals[index]
+        superclass = cm.slots[cm.num_literals][1][0]
+
+        args = [context.pop() for _ in range(nb_args)]
+        args.reverse()
+        receiver = context.pop()
+
+        compiled_method = vm.lookup(superclass, selector)
+        new_context = context.__class__(receiver, compiled_method)
+        new_context.stack[:nb_args] = args
+        context.next = new_context
+        context.pc += 2
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        frmt = cm.raw_data[position + 1]
+        nb_args = (frmt & 0b11100000) >> 5
+        index = frmt & 0b00011111
+        selector = cm.literals[index].as_text()
+        superclass = cm.slots[cm.num_literals][1][0]
+        return f"super {selector} from={superclass.name}"
 
 
 @bytecode(135)
@@ -327,6 +377,40 @@ class CallPrimitive(object):
         return f"primitiveCall {primitive}"
 
 
+@bytecode(143)
+class PushClosure(object):
+    display_jump = 4
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        closure = context.block_closure(context.pc)
+        context.push(closure)
+        context.pc += 4 + closure.size
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        info = cm.raw_data[position + 1]
+        num_copied = (info & 0xF0) >> 4
+        num_args = info & 0x0F
+        size = int.from_bytes(cm.raw_data[position + 2: position + 4], byteorder="big")
+        return f"closureCopy from={position + 4} to={position + size + 3} num_args={num_args} copied={num_copied}"
+
+
+@bytecode(range(144, 152))
+class Jump(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        jump_pc = bytecode - 143
+        context.pc += 1
+        context.pc += jump_pc
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        jump_pc = bytecode - 143
+        return f"jump {jump_pc + position + 1}"
+
+
 @bytecode(range(152, 160))
 class JumpFalse(object):
     @staticmethod
@@ -348,6 +432,38 @@ class JumpFalse(object):
             else:
                 result = "[will not jump]"
         return f"jumpFalse {addr} {result}"
+
+
+@bytecode(range(168, 172))
+class LongJumpTrue(object):
+    display_jump = 2
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        pc = context.pc
+        true = vm.memory.true
+        result = context.pop()
+        if result is true:
+            cm = context.compiled_method
+            addr = cm.raw_data[pc + 1]
+            context.pc += addr + 2
+            return
+        context.pc += 2
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        addr = cm.raw_data[position + 1] + position + 2
+        res = ""
+        if active:
+            true = vm.memory.true
+            result = context.peek()
+            if result is true:
+                res = "[will jump]"
+            else:
+                res = "[will not jump]"
+        return f"jumpTrue {addr} {res}"
+
 
 
 @bytecode(range(172, 176))
@@ -481,6 +597,8 @@ class Send2ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
+        # if compiled_method is None:
+        #     import ipdb; ipdb.set_trace()
         new_context = context.__class__(receiver, compiled_method)
         new_context.stack[0] = arg0
         new_context.stack[1] = arg1

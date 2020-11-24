@@ -275,10 +275,19 @@ class MethodTrailer(object):
         self.size = 4
 
     def decode_varlengthsourcepointer(self):
-        method_size = self.compiled_method.size()
-        pos = method_size - 1
-        self.size = method_size - pos
-        import ipdb; ipdb.set_trace()
+        cm = self.compiled_method
+        method_size = cm.size()
+        pos = method_size - 2
+        shift = data = 0
+        while "Value smaller than 127":
+            value = cm.raw_data[pos]
+            data = ((value & 0x7F) << shift) + data
+            pos -= 1
+            shift += 7
+            if value <= 127:
+                break
+
+        self.size = method_size - pos - 1
 
     def decode(self):
         self.data = None
@@ -304,7 +313,7 @@ class MethodTrailer(object):
         elif kind == 0b000111:
             self.decode_length()
         elif kind == 0b001000:
-            import ipdb; ipdb.set_trace()
+            self.decode_varlengthsourcepointer()
         elif kind == 0b001001:
             self.size = 2
         elif kind == 0b111111:
