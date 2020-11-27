@@ -13,10 +13,10 @@ class ImmediateInteger(SpurObject):
     def create(cls, i, memory):
         addr = struct.unpack("Q", struct.pack("q", ((i << 3)) | 0x01 ))
         addr = addr[0]
-        return cls(addr, memory)
+        return memory.object_at(addr)
 
     def __getitem__(self, index):
-        raise TypeError("ImmediateInteger don't have slots")
+        raise TypeError(f"{self.__class__.__name__} don't have slots")
 
     def __repr__(self):
         return f"{super().__repr__()}({self.value})"
@@ -25,7 +25,7 @@ class ImmediateInteger(SpurObject):
         return self.value == int(other)
 
     def __hash__(self):
-        return object.__hash__(self)
+        return hash(self.address)
 
     def __le__(self, other):
         return self.value <= int(other)
@@ -56,3 +56,43 @@ class ImmediateInteger(SpurObject):
 
     def display(self):
         return str(self.value)
+
+
+class ImmediateFloat(SpurObject):
+    class_ = None
+    number_of_slots = 0
+
+    @staticmethod
+    def ror(n, rotations, width):
+        return (2**width-1)&(n>>rotations|n<<(width-rotations))
+
+    @staticmethod
+    def rol(n, rotations, width):
+        return (2**width-1)&(n<<rotations|n>>(width-rotations))
+
+    def update(self, new_address):
+        value = new_address >> 3
+        if value > 1:
+            value = value + 0x7000000000000000
+        value = self.ror(value, 1, 64)
+        value = struct.unpack(">d", struct.pack(">Q", value))[0]
+        self.value = value
+        self.class_ = self.memory.smallfloat64
+
+    @classmethod
+    def create(cls, i, memory):
+        addr = struct.unpack(">Q", struct.pack(">d", i))[0]
+        addr = cls.rol(addr, 1, 64)
+        if addr > 1:
+            addr = addr - 0x7000000000000000
+        addr = (addr << 3) | 0x4
+        return memory.object_at(addr)
+
+    def __getitem__(self, index):
+        raise TypeError(f"{self.__class__.__name__} don't have slots")
+
+    def __repr__(self):
+        return f"{super().__repr__()}({self.value})"
+
+    def as_text(self):
+        return f"{self.value}"

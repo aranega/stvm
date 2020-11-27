@@ -92,7 +92,7 @@ class PushLiteralConstant(object):
         index = bytecode - 32
         constant = context.compiled_method.literals[index]
         try:
-            constant = f'"{constant.as_text()}"'
+            constant = f'[{constant.as_text()}]'
         except Exception:
             constant = constant.display()
         return f"pushConstant {constant} "
@@ -113,6 +113,27 @@ class PushLiteralVariable(object):
         index = bytecode - 64
         association = context.compiled_method.literals[index]
         return f"pushLitVar {association[0].display()}"
+
+
+@bytecode(range(96, 104))
+class PopIntoReceiverVariable(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        index = bytecode - 96
+        receiver = context.receiver
+        value = context.pop()
+        context.receiver[index] = value
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        index = bytecode - 96
+        val = ""
+        if active:
+            val = context.peek()
+            val = f"value={val.display()}"
+        receiver = context.receiver
+        return f"popIntoRcvrInstvar {index} rcvr={receiver.display()} {val}"
 
 
 @bytecode(range(104, 112))
@@ -186,6 +207,19 @@ class PushInt(object):
     def display(bytecode, context, vm, position=None, active=False):
         value = bytecode - 117
         return f"pushInt {value}"
+
+
+@bytecode(120)
+class ReturnReceiver(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        context.push(context.receiver)
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        rcvr = context.receiver
+        rcvr = f"rcvr={rcvr.display()}"
+        return f"return receiver {rcvr}"
 
 
 @bytecode(121)
@@ -287,6 +321,118 @@ class OperationLongForm(object):
         return f"{label}"
 
 
+@bytecode(131)
+class SingleExtendSend(object):
+    display_jump = 2
+
+    @staticmethod
+    def execute(byte, context, vm):
+        cm = context.compiled_method
+        frmt = cm.raw_data[context.pc + 1]
+        nb_args = (frmt & 0b11100000) >> 5
+        index = frmt & 0b00011111
+        selector = cm.literals[index]
+
+        args = [context.pop() for _ in range(nb_args)]
+        args.reverse()
+        receiver = context.pop()
+
+        compiled_method = vm.lookup(receiver.class_, selector)
+        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context.stack[:nb_args] = args
+        context.next = new_context
+        context.pc += 2
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        frmt = cm.raw_data[position + 1]
+        nb_args = (frmt & 0b11100000) >> 5
+        index = frmt & 0b00011111
+        selector = cm.literals[index].as_text()
+        rcvr = args = ""
+        if active:
+            rcvr = context.stack[-nb_args-1]
+            rcvr = f"rcvr={rcvr.display()}"
+            args = [x.display() for x in context.stack[-nb_args:]]
+            args = f"args={', '.join(reversed(args))}"
+
+        return f"<%> send {selector} {rcvr} {args}"
+
+
+@bytecode(132)
+class DoubleExtendSend(object):
+    display_jump = 3
+
+    @staticmethod
+    def execute(byte, context, vm):
+        cm = context.compiled_method
+        frmt = cm.raw_data[context.pc + 1]
+        operation = (frmt & 0b11100000) >> 5
+        index = cm.raw_data[context.pc + 2]
+
+        if operation == 0:  # send
+            import ipdb; ipdb.set_trace()
+            nb_args = frmt & 0b00011111
+            args = [context.pop() for _ in range(nb_args)]
+            args.reverse()
+            receiver = context.pop()
+            selector = context.compiled_method.literals[literal_index]
+            prepare_new_context(context, receiver, selector.as_text(), args=args)
+        elif operation == 1:  # super send
+            import ipdb; ipdb.set_trace()
+        elif operation == 2:  # push receiver variable
+            receiver = context.receiver
+            context.push(receiver[index])
+        elif operation == 3:  # push literal constant
+            import ipdb; ipdb.set_trace()
+        elif operation == 4:  # push literal variable
+            import ipdb; ipdb.set_trace()
+        elif operation == 5:  # store receiver variable
+            import ipdb; ipdb.set_trace()
+        elif operation == 6:  # store-pop recevier variable
+            import ipdb; ipdb.set_trace()
+        elif operation == 7:  # store literal variable
+            import ipdb; ipdb.set_trace()
+        context.pc += 3
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        action = ""
+        cm = context.compiled_method
+        frmt = cm.raw_data[position + 1]
+        nb_args = frmt & 0b00011111
+        operation = (frmt & 0b11100000) >> 5
+        index = cm.raw_data[position + 2]
+        if operation == 0:  # send
+            action = "send"
+            selector = cm.literals[index]
+            args = selector.as_text()
+        elif operation == 1:  # super send
+            action = "super send"
+            args = "#TODO"
+            import ipdb; ipdb.set_trace()
+        elif operation == 2:  # push receiver variable
+            action = "pushRcvrInstvar"
+            args = f"index={index}"
+        elif operation == 3:  # push literal constant
+            action = "pushConstant"
+            args = f"{cm.literals[index]}"
+        elif operation == 4:  # push literal variable
+            action = "pushLitVar"
+            args = f"unknown #TODO"
+        elif operation == 5:  # store receiver variable
+            action = "storeInRcvrInstvar"
+            args = f"index={index} TODO"
+        elif operation == 6:  # store-pop recevier variable
+            action = "storePopInRcvrInstvar"
+            args = f"index={index} TODO"
+        elif operation == 7:  # store literal variable
+            action = "storeLitVar"
+            args = f"index={index} TODO"
+        return f"<$> {action} {args}"
+
+
 @bytecode(133)
 class SuperSend(object):
     @staticmethod
@@ -303,7 +449,7 @@ class SuperSend(object):
         receiver = context.pop()
 
         compiled_method = vm.lookup(superclass, selector)
-        new_context = context.__class__(receiver, compiled_method)
+        new_context = context.__class__(receiver, compiled_method, vm)
         new_context.stack[:nb_args] = args
         context.next = new_context
         context.pc += 2
@@ -345,6 +491,19 @@ class DuplicateTopStack(object):
             top = context.peek()
             top = top.display()
         return f"dup {top}"
+
+
+@bytecode(137)
+class PushThisContext(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        ctx = context.to_smalltalk_context()
+        context.push(ctx)
+        context.pc += 1
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        return f"push thisContext ctx={context.display()}"
 
 
 @bytecode(139)
@@ -434,6 +593,25 @@ class JumpFalse(object):
         return f"jumpFalse {addr} {result}"
 
 
+@bytecode(range(160, 168))
+class LongJump(object):
+    display_jump = 2
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        shift = context.pc + ((bytecode - 160) - 4) * 256
+        cm = context.compiled_method
+        addr = cm.raw_data[context.pc + 1] + shift + 2
+        context.pc = addr
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        shift = position + ((bytecode - 160) - 4) * 256
+        cm = context.compiled_method
+        addr = cm.raw_data[position + 1] + shift + 2
+        return f"longJump {addr}"
+
+
 @bytecode(range(168, 172))
 class LongJumpTrue(object):
     display_jump = 2
@@ -511,7 +689,7 @@ class SendSpecialMessage(object):
 
         receiver = context.pop()
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method)
+        new_context = context.__class__(receiver, compiled_method, vm)
         new_context.stack[:nb_params] = args
         context.next = new_context
         context.pc += 1
@@ -543,7 +721,7 @@ class Send0ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method)
+        new_context = context.__class__(receiver, compiled_method, vm)
         context.next = new_context
         context.pc += 1
 
@@ -568,7 +746,7 @@ class Send1ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method)
+        new_context = context.__class__(receiver, compiled_method, vm)
         new_context.stack[0] = arg0
 
         context.next = new_context
@@ -597,9 +775,7 @@ class Send2ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
-        # if compiled_method is None:
-        #     import ipdb; ipdb.set_trace()
-        new_context = context.__class__(receiver, compiled_method)
+        new_context = context.__class__(receiver, compiled_method, vm)
         new_context.stack[0] = arg0
         new_context.stack[1] = arg1
 
@@ -615,5 +791,5 @@ class Send2ArgSelector(object):
             receiver = context.stack[-3]
             receiver = f"rcvr={receiver.display()}"
             args = context.stack[-1].display(), context.stack[-2].display()
-            args = f"args={','.join(args)}"
+            args = f"args={', '.join(args)}"
         return f"send {selector.as_text()} {args}"

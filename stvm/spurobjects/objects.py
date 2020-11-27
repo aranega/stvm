@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+import struct
 
 
 def register_for(o):
@@ -25,6 +26,17 @@ class SubList(Sequence):
             i = len(self) + i
         i = i * 8
         return self.memory.object_at(self.raw_slots[i:i + 8].cast("Q")[0])
+
+    def __setitem__(self, i, val):
+        if isinstance(i, slice):
+            raise TypeError("Slice over sublist is not yet impl")
+        if i < 0:
+            i = len(self) + i
+        i = i * 8
+        if isinstance(val, SpurObject):
+            self.raw_slots[i:i + 8] = struct.pack("Q", val.address)
+        else:
+            raise TypeError("Non spur object in slot like?", val)
 
     def __len__(self):
         return len(self.raw_slots) // 8
@@ -114,9 +126,16 @@ class SpurObject(object):
     def __getitem__(self, index):
         return self.slots[index]
 
+    def __setitem__(self, index, value):
+        self.slots[index] = value
+
     @property
     def inst_size(self):
         return self[2] & 0xFFFF
+
+    @property
+    def inst_format(self):
+        return (self[2].value & 0xFFFF0000) >> 16
 
     @property
     def class_(self):
@@ -136,7 +155,7 @@ class SpurObject(object):
             return "true"
         if self is self.memory.false:
             return "false"
-        return f"<0x{id(self):X} of {self.class_.name}>"
+        return f"<0x{self.address:x} of {self.class_.name}>"
 
     def __len__(self):
         return self.number_of_slots
@@ -174,34 +193,30 @@ class VariableSizedW(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         nb_instvars = self.class_.inst_size
-        self.instvars = self.slots[0:nb_instvars]
+        self.instvars = self.slots[:nb_instvars]
         self.array = self.slots[nb_instvars:]
 
-    # def instvar(self, index):
-    #     return self.memory.object_at(self.instvars[index].cast("Q")[0])
-    #
-    # def array_at(self, index):
-    #     return self.memory.object_at(self.array[index].cast("Q")[0])
 
 @register_for(4)
 class WeakVariableSized(SpurObject):
     ...
 
+
 @register_for(tuple(range(9, 24)))
 class Indexable(SpurObject):
     indexable64 = 9
-    _bytes = [64, 32, 32, 16, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8]
+    _bits = [64, 32, 32, 16, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8]
     _shift = [0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         shift = self.object_format - self.indexable64
-        self.nb_bytes = self._bytes[shift]
+        self.nb_bits = self._bits[shift]
         self.nb_empty_cases = self._shift[shift]
 
     def __getitem__(self, index):
-        line = (index // self.nb_bytes) * self.nb_bytes
-        row = index % self.nb_bytes
+        line = (index // self.nb_bits) * self.nb_bits
+        row = index % self.nb_bits
         return self.raw_slots[line + row]
 
     def __iter__(self):
@@ -212,6 +227,12 @@ class Indexable(SpurObject):
 
     def as_text(self):
         return "".join(chr(i) for i in self)
+
+    def as_int(self):
+        result = 0
+        for i in reversed(self):
+            result = (result << self.nb_bits) + i
+        return result
 
     def __repr__(self):
         return f"{super().__repr__()}({self.as_text()})"
@@ -269,7 +290,7 @@ class MethodTrailer(object):
         return length
 
     def decode_notrailer(self):
-        return 4
+        self.size = 4
 
     def decode_sourcepointer(self):
         self.size = 4
@@ -318,3 +339,5 @@ class MethodTrailer(object):
             self.size = 2
         elif kind == 0b111111:
             self.size = 4
+        else:
+            import ipdb; ipdb.set_trace()

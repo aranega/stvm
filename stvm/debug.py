@@ -24,6 +24,16 @@ class STVMDebugger(Cmd):
         self.vm = vm
         self.cmdqueue = ['stack', 'list']
 
+    # def cmdloop(self, intro=None):
+    #     while True:
+    #         try:
+    #             super().cmdloop(intro="")
+    #             break
+    #         except KeyboardInterrupt:
+    #             # self.do_stack("")
+    #             # self.do_list("")
+    #             ...
+
     def do_step(self, arg):
         self.vm.decode_execute(self.vm.fetch())
         self.do_stack("")
@@ -35,12 +45,28 @@ class STVMDebugger(Cmd):
         while current != bc:
             self.vm.decode_execute(current)
             current = self.vm.fetch()
+        self.do_stack("")
         self.do_list("")
+
+    def do_break(self, arg):
+        name = arg.strip()
+        while self.vm.current_context.compiled_method.selector.as_text() != name:
+            self.vm.decode_execute(self.vm.fetch())
+        self.do_stack("")
+        self.do_list("")
+
 
     def do_continue(self, arg):
         try:
+            count = 0
+            import datetime
+            a = datetime.datetime.now()
             while True:
                 self.vm.decode_execute(self.vm.fetch())
+                count += 1
+                if count > 50000:
+                    b = datetime.datetime.now()
+                    raise StopIteration(f"Looping too long {b-a}")
         except Exception as e:
             try:
                 self.do_list("full")
@@ -55,6 +81,8 @@ class STVMDebugger(Cmd):
         while "not same context":
             self.vm.decode_execute(self.vm.fetch())
             if self.vm.current_context is context:
+                break
+            if self.vm.current_context is context.previous:
                 break
         self.do_stack("")
         self.do_list("")
@@ -89,6 +117,7 @@ class STVMDebugger(Cmd):
         while i < start:
             bc_class = self.vm.bytecodes_map.get(cm.raw_data[i])
             i += bc_class.display_jump
+
         while i < stop:
             bc = cm.raw_data[i]
             active = context.pc == i
@@ -127,13 +156,18 @@ class STVMDebugger(Cmd):
                 prefix = f"    {colors.fg.lightblue}arg  {i:2} -->  "
             elif i < temps:
                 prefix = f"    {colors.fg.cyan}temp {i:2} -->  "
-            print(f"{prefix}{e.display()}{colors.reset}")
+            print(f"{prefix}{e.display()}")
+        print(colors.reset)
 
     def do_print_context(self, arg):
         context = self.vm.current_context
+        self.print_context(context, arg)
+
+    def print_context(self, context, arg):
         print("Current context")
         print("method  ", context.compiled_method.selector.as_text())
         print("receiver", context.receiver.display())
+        print("sender  ", context.sender.display())
         print("stack:   [", *[s.display() for s in context.stack], ']')
         print("args:    [", *[s.display() for s in context.args], ']')
         print("temps:   [", *[s.display() for s in context.temps], ']')
@@ -147,6 +181,15 @@ class STVMDebugger(Cmd):
         context = self.vm.current_context
         receiver = context.receiver
         self.navigate(receiver, arg)
+
+    def do_sender(self, arg):
+        context = self.vm.current_context
+        sender = context.previous
+        s = sender
+        while s != self.vm.memory.nil:
+            self.print_context(s, "")
+            print()
+            s = s.previous
 
     def navigate(self, receiver, arg):
         args = [a for a in arg.strip().split(" ") if a]
@@ -205,7 +248,9 @@ class STVMDebugger(Cmd):
     def do_where(self, arg):
         context = self.vm.current_context
         current = context
-        while context != None:
+        nil = self.vm.memory.nil
+        i = 1
+        while context != nil:
             line = colors.fg.purple
             selector = context.compiled_method.selector.as_text()
             indic = f"{colors.reset}{colors.fg.purple} "
@@ -214,6 +259,8 @@ class STVMDebugger(Cmd):
             line += f"{indic}   #{selector} rcvr=<0x{id(context.receiver):X}>"
             print(line)
             context = context.previous
+            i += 1
+        print(f"Depth {i}")
         print(colors.reset)
 
     def do_quit(self, arg):
@@ -261,3 +308,4 @@ class colors:
 
 if __name__ == '__main__':
     STVMDebugger(VM.new('Pharo8.0.image')).cmdloop()
+    # STVMDebugger(VM.new('Pharo9.0-SNAPSHOT-64bit-12edded.image')).cmdloop()
