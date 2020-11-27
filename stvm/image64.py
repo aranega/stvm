@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import mmap
 import struct
-from spurobjects import SpurObject, ImmediateInteger
+from spurobjects import SpurObject, ImmediateInteger, ImmediateFloat
 
 
 class ByteChunk(object):
@@ -28,6 +28,7 @@ class SpurMemoryHandler(object):
         "character": 19,
         "dnuSelector": 20,
         "special_symbols": 23,
+        "block_closure_class": 36,
     }
     def __init__(self, memory):
         self.memory = memory
@@ -38,6 +39,7 @@ class SpurMemoryHandler(object):
             setattr(self.memory, name, self.special_object_array[pos])
         setattr(self.memory, "class_table", self.class_table)
         setattr(self.memory, "special_object_array", self.special_object_array)
+        setattr(self.memory, "smallfloat64", self.class_table[4])
 
     def init_smallints(self):
         for i in range(-255, 255):
@@ -60,6 +62,9 @@ class SpurMemoryHandler(object):
             import ipdb; ipdb.set_trace()
         elif address_kind == 3:
             import ipdb; ipdb.set_trace()
+        elif address_kind == 4:
+            obj = ImmediateFloat(address, self.memory)
+
         self.cache[address] = obj
         return obj
 
@@ -88,6 +93,9 @@ class VMMemory(object):
 
     def __getitem__(self, i):
         return self.mem[i]
+
+    def __setitem__(self, i, value):
+        self.mem[i] = value
 
     @property
     def special_object_oop(self):
