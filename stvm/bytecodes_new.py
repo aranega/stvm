@@ -791,7 +791,7 @@ class SendSpecialMessage(object):
         args = []
         for i in range(nb_params):
             args.append(context.pop())
-
+        args.reverse()
         receiver = context.pop()
         compiled_method = vm.lookup(receiver.class_, selector)
         new_context = context.__class__(receiver, compiled_method, vm)
@@ -809,7 +809,8 @@ class SendSpecialMessage(object):
             nb_params = vm.memory.special_symbols[pos + 1]
             args = []
             for i in range(nb_params):
-                args.append(f"arg[{i}]={context.stack[-i - 1].display()}>")
+                args.append(f"arg={context.stack[-i - 1].display()}>")
+            args.reverse()
             args = ", ".join(args)
             receiver = context.stack[-nb_params - 1]
             receiver = f"rcvr={receiver.display()}"

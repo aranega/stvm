@@ -184,6 +184,11 @@ def perform(rcvr, selector, *args, context, vm):
     vm.current_context = new_context
 
 
+@primitive(85)
+def signal(rcvr, context, vm):
+    print("Don't signal, but should")
+
+
 @primitive(86)
 def wait(rcvr, context, vm):
     print("Don't wait, but should")
