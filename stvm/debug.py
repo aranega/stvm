@@ -197,6 +197,9 @@ class STVMDebugger(Cmd):
             if receiver.kind in range(9, 24):
                 print(f"{colors.fg.red}Cannot navigate slots of Indexable objects{colors.reset}")
                 break
+            if receiver.kind in (-1, -3):
+                print(f"{colors.fg.red}Cannot navigate slots of Immediate {colors.reset}")
+                break
             if args[0] == "slot":
                 number = args[1]
                 receiver = receiver.slots[int(number)]
@@ -218,6 +221,8 @@ class STVMDebugger(Cmd):
         print("receiver", receiver.display())
         print("object type", receiver.__class__.__name__, "kind", receiver.kind)
         print("class", receiver.class_.name)
+        if receiver.kind in (-1, -3):
+            return
         print("slots")
         if receiver.kind in range(9, 24):
             for i in range(len(receiver)):
@@ -256,9 +261,10 @@ class STVMDebugger(Cmd):
             indic = f"{colors.reset}{colors.fg.purple} "
             if context is current:
                 indic = f"{colors.bold}*"
-            line += f"{indic}   #{selector} rcvr=<0x{id(context.receiver):X}>"
+            line += f"{indic}   #{selector} rcvr={context.receiver.display()}"
+            # line += f"        {context.display()}"
             print(line)
-            context = context.previous
+            context = context.sender
             i += 1
         print(f"Depth {i}")
         print(colors.reset)

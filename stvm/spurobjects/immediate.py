@@ -5,6 +5,10 @@ class ImmediateInteger(SpurObject):
     class_ = None
     number_of_slots = 0
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kind = -1
+
     def update(self, new_address):
         self.value = struct.unpack("q", struct.pack("Q", new_address))[0] >> 3
         self.class_ = self.memory.smallinteger
@@ -57,10 +61,17 @@ class ImmediateInteger(SpurObject):
     def display(self):
         return str(self.value)
 
+    def as_float(self):
+        return float(self.value)
+
 
 class ImmediateFloat(SpurObject):
     class_ = None
     number_of_slots = 0
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kind = -3
 
     @staticmethod
     def ror(n, rotations, width):
@@ -96,3 +107,9 @@ class ImmediateFloat(SpurObject):
 
     def as_text(self):
         return f"{self.value}"
+
+    def as_float(self):
+        return self.value
+
+    def display(self):
+        return str(self.value)

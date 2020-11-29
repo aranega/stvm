@@ -3,6 +3,7 @@ import struct
 from spurobjects.immediate import ImmediateInteger, ImmediateFloat
 
 
+nil = object()
 primitives = {}
 
 
@@ -13,10 +14,16 @@ class PrimitiveFail(Exception):
 def execute_primitive(number, context, vm, *args, **kwargs):
     memory = vm.memory
     try:
-        result = primitives[number](args[0], *args[1:], context=context, vm=vm, **kwargs)
-        return python2st(result, memory)
+        receiver = args[0]
+        result = primitives[number](receiver, *args[1:], context=context, vm=vm, **kwargs)
+        result = python2st(result, memory)
+        if result is None:
+            context.push(receiver)
+        else:
+            context.push(result)
+        return result
     except Exception as e:
-        if number != 83:
+        if number not in (110, 113, 7, 254, 547, 71, 202):
             raise PrimitiveFail
         raise e
 
@@ -36,7 +43,7 @@ def python2st(obj, memory):
         return memory.true
     if obj is False:
         return memory.false
-    if obj is None:
+    if obj is nil:
         return memory.nil
     return obj
 
@@ -80,6 +87,11 @@ def lessOrEqual(a, b, context, vm):
 @primitive(6)
 def greaterOrEqual(a, b, context, vm):
     return a.value >= b.value
+
+
+@primitive(7)
+def equalSmallint(a, b, context, vm):
+    return a.value == b.value
 
 
 @primitive(8)
@@ -136,6 +148,10 @@ def smallintAsFloat(self, context, vm):
     return ImmediateFloat.create(self, vm.memory)
 
 
+@primitive(60)
+def at(self, at, context, vm):
+    return self[at.value - 1]
+
 
 @primitive(61)
 def at_put(self, at, val, context, vm):
@@ -159,15 +175,18 @@ def new(rcvr, size, context, vm):
 
 
 @primitive(83)
-def perform(rcvr, *args, context, vm):
-    selector = args[-1]
-    args = args[:-1]
+def perform(rcvr, selector, *args, context, vm):
     method = vm.lookup(rcvr.class_, selector)
     new_context = context.__class__(rcvr, method, vm)
-    new_context.stack[:len(args)] = reversed(args)
+    new_context.stack[:len(args)] = args
     context.previous.next = new_context
-    context._previous = None  # useful?
+    # context._previous = None  # useful?
     vm.current_context = new_context
+
+
+@primitive(86)
+def wait(rcvr, context, vm):
+    print("Don't wait, but should")
 
 
 @primitive(110)
@@ -198,6 +217,34 @@ def external_call(*args, context, vm):
     return plugin_function(*args, context, vm)
 
 
+# @primitive(201)
+@primitive(range(201, 205))
+def closure_value(closure, *args, context, vm):
+    outer_ctx = closure.outer_context
+    method = outer_ctx.compiled_method
+    rcvr = outer_ctx.receiver
+    new_context = context.__class__(rcvr, method, vm)
+    new_context.pc = closure.startpc.value
+    new_context.closure = closure
+    # new_context.stack[:len(args)] = args
+    # new_context.stack[len(args):] = closure.copied
+    # new_context.stack[]
+
+    new_context.stack = list(args)
+    new_context.stack.extend(reversed(closure.copied))
+    start_temps = method.num_args
+    stop_temps = method.num_temps
+    new_context.stack.extend(outer_ctx.stack[start_temps:stop_temps])
+    # new_context.stack.extend(outer_ctx.stack)
+
+    context.previous.next = new_context
+    # context._previous = None  # useful?
+    vm.current_context = new_context
+
+
+primitive(221)(closure_value)
+
+
 @primitive(240)
 def utc_microsecond_clock(rcvr, context, vm):
     t = int(round(time.time() * 1000))
@@ -205,12 +252,11 @@ def utc_microsecond_clock(rcvr, context, vm):
 
 
 @primitive(254)
-def VMParameter(rcvr, i, context, vm):
-    # HARDCODED PARAMS FOR NOW
-    params = {
-        44: ImmediateInteger.create(1024, vm.memory)
-    }
-    return params[i.value]
+def VMParameter(rcvr, at, *put, context=None, vm=None):
+    if put:
+        vm.params[at.value] = put[0]
+        return at.__class__.create(0, vm.memory)
+    return vm.params[at.value]
 
 
 @primitive(542)
@@ -218,12 +264,47 @@ def minusFloat(a, b, context, vm):
     return a.__class__.create(a.value - b.value, vm.memory)
 
 
+@primitive(543)
+def lessFloat(a, b, context, vm):
+    return a.value < b.value
+
+
+@primitive(544)
+def greaterFloat(a, b, context, vm):
+    return a.value > b.value
+
+
+@primitive(545)
+def lessEqFloat(a, b, context, vm):
+    return a.value <= b.value
+
+
 @primitive(547)
 def eqFloat(a, b, context, vm):
-    return a.value == b.value
+    try:
+        return a.value == b.value
+    except Exception:
+        a = a.as_float()
+        b = b.as_float()
+        return a == b
+
+
+@primitive(549)
+def multFloat(a, b, context, vm):
+    return a.__class__.create(a.value * b.value, vm.memory)
 
 
 @primitive(550)
+def divFloat(a, b, context, vm):
+    return a.__class__.create(a.value / b.value, vm.memory)
+
+
+@primitive(551)
+def truncatedFloat(a, context, vm):
+    return ImmediateInteger.create(int(a.value), vm.memory)
+
+
+@primitive(552)
 def divFloat(a, b, context, vm):
     return a.__class__.create(a.value / b.value, vm.memory)
 

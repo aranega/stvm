@@ -7,7 +7,8 @@ from bytecodes_new import ByteCodeMap
 
 class VM(object):
     require_forward_switch = [131, 132, 133, *range(176, 256)]
-    require_backward_switch = [*range(120, 125)]
+    require_backward_switch = [*range(120, 126)]
+
     def __init__(self, image, bytecodes_map=ByteCodeMap, debug=False):
         self.image = image
         self.memory = image.as_memory()
@@ -16,6 +17,10 @@ class VM(object):
         self.bytecodes_map = bytecodes_map()
         self.current_context = self.initial_context()
         self.current_context.pc += 1
+        self.params = {
+            40: ImmediateInteger.create(8, self.memory),  # word size
+            44: ImmediateInteger.create(6854880, self.memory)  # edenSize
+        }
 
     @classmethod
     def new(cls, file_name):
@@ -33,7 +38,7 @@ class VM(object):
     def initial_context(self):
         process = self.active_process
         context = process[1]
-        return Context.from_smalltalk_context(context, self)
+        return VMContext.from_smalltalk_context(context, self)
 
     def fetch(self):
         return self.current_context.fetch_bytecode()
@@ -84,10 +89,14 @@ class MemoryAllocator(object):
         addr = self.current
         header = self.create_header(stclass, array_size)
         self.memory[addr:addr + 8] = header
-        instance = self.memory.object_at(addr)
+        # set all the mem to nil first
+        nb_slots = stclass.inst_size + array_size
         nil = self.memory.nil
-        for i in range(instance.number_of_slots):
-            instance.slots[i] = nil
+        slot_start = addr + 8
+        for i in range(0, nb_slots * 8, 8):
+            slot = self.memory[slot_start + i:slot_start + i + 8].cast("Q")
+            slot[0] = nil.address
+        instance = self.memory.object_at(addr)
         self.current = instance.next_object.end_address + 8
         return instance
 
@@ -103,14 +112,15 @@ class MemoryAllocator(object):
         return header
 
 
-class Context(object):
+class VMContext(object):
     def __init__(self, receiver, compiled_method, vm):
         self.vm = vm
+        self.stcontext = None
         nil = self.vm.memory.nil
         self.receiver = receiver
         self.compiled_method = compiled_method
         self.pc = 0
-        self.outer_context = nil
+        self.closure = nil
         self.pc = compiled_method.initial_pc
         self._previous = None
         self._next = None
@@ -179,13 +189,15 @@ class Context(object):
         return context
 
     def to_smalltalk_context(self):
+        if self.stcontext:
+            return self.stcontext
         memory = self.vm.memory
         stclass = self.class_
         nil = memory.nil
         frame_size = self.compiled_method.frame_size
         ctx = self.vm.allocate(stclass, array_size=frame_size)
         if self.sender != nil:
-            if isinstance(self.sender, (Context, BlockClosure)):
+            if isinstance(self.sender, VMContext):
                 ctx.slots[0] = self.sender.to_smalltalk_context()
             else:
                 ctx.slots[0] = self.sender
@@ -194,17 +206,19 @@ class Context(object):
         ctx.slots[1] = ImmediateInteger.create(self.pc, memory)
         ctx.slots[2] = ImmediateInteger.create(len(self.stack), memory)
         ctx.slots[3] = self.compiled_method
-        if self.outer_context != nil:
-            if isinstance(self.outer_context, (Context, BlockClosure)):
-                ctx.slots[4] = self.outer_context.to_smalltalk_context()
+        if self.closure != nil:
+            if isinstance(self.closure, VMContext):
+                ctx.slots[4] = self.closure.to_smalltalk_context()
             else:
-                ctx.slots[4] = self.outer_context
+                ctx.slots[4] = self.closure
         else:
             ctx.slots[4] = nil
 
         ctx.slots[5] = self.receiver
         for i, v in enumerate(self.stack):
-            ctx.slots[6 + i] = v
+            ctx.stack[i] = v
+
+        self.stcontext = ctx
         return ctx
 
     def fetch_bytecode(self):
@@ -219,9 +233,6 @@ class Context(object):
     def peek(self):
         return self.stack[-1]
 
-    def block_closure(self, start):
-        return BlockClosure(self, start)
-
     def display(self):
         cm = self.compiled_method
         return f"<context {hex(id(self))} on {cm.selector.as_text()}>"
@@ -235,8 +246,8 @@ class Context(object):
         mem = self.compiled_method.memory
         pc = ImmediateInteger.create(self.pc, mem)
         stakfp = ImmediateInteger.create(len(self.stack), mem)
-        outer = self.outer_context
-        if self.outer_context is None:
+        outer = self.closure
+        if self.closure is None:
             outer = mem.nil
         stack = [self.sender, pc, stakfp, self.compiled_method, outer, self.receiver, *self.stack]
         return stack
@@ -246,56 +257,15 @@ class Context(object):
         return self.receiver.memory.context_class
 
 
-class BlockClosure(object):
-    def __init__(self, context, start):
-        self.outer_context = context
-        self.memory = context.vm.memory
-        cm = context.compiled_method
-        info = cm.raw_data[start + 1]
-        self.num_copied = (info & 0xF0) >> 4
-        self.num_args = info & 0x0F
-        size = int.from_bytes(cm.raw_data[start + 2: start + 4], byteorder="big")
-
-        copied = [self.outer_context.pop() for i in range(self.num_copied)]
-        copied.reverse()
-        self.start = start + 4
-        self.pc = self.start
-        self.size = size
-
-        nil = cm.memory.nil
-        # num_temps = compiled_method.num_temps
-        stack = [nil] * self.num_args
-        stack.extend(copied)
-        # stack.extend([nil] * num_temps)
-        self.stack = stack
-
-    def display(self):
-        return f"<closure [{self.start}-{self.start + self.size - 1}] <args={self.num_args}, copied={self.num_copied}>>"
-
-    @property
-    def slots(self):
-        # FAKE STACK/SLOTS
-        mem = self.outer_context.vm.memory
-        outer = self.outer_context
-        pc = ImmediateInteger.create(self.pc, mem)
-        num_args = ImmediateInteger.create(self.num_args, mem)
-        stack = [outer, pc, num_args, *self.stack]
-        return stack
-
-    @property
-    def class_(self):
-        return self.outer_context.vm.memory.block_closure_class
-
 if __name__ == "__main__":
     vm = VM.new("Pharo8.0.image")
     from spurobjects import ImmediateFloat
 
-    # 49513832
-    # 9136902924009262292
-    # 567453553048682496
-    print(hex(567453553048682496))
-    j = ImmediateFloat(0x7e00000000000004, vm.memory)
-    print(j)
-    j = ImmediateFloat.create(0.9, vm.memory)
-    print(j)
-    print(j.address)
+    # for i in range(0, 50):
+    #     e = vm.memory.class_table[i]
+    #     if e is vm.memory.nil:
+    #         continue
+    #     print(i, e.name)
+
+    i = ImmediateInteger.create(45, vm.memory)
+    print(i.kind)

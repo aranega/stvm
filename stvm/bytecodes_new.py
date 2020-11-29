@@ -259,8 +259,9 @@ class ReturnNil(object):
 class Return(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        if context.outer_context:
-            context.previous_context = context.outer_context.previous_context
+        if context.closure:
+            import ipdb; ipdb.set_trace()
+            context.previous_context = context.closure.previous_context
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
@@ -269,6 +270,24 @@ class Return(object):
             res = context.peek()
             res = f"ret={res.display()}"
         return f"returnTop {res}"
+
+
+@bytecode(125)
+class BlockReturn(object):
+    @staticmethod
+    def execute(bytecode, context, vm):
+        ctx = context.closure.outer_context
+        # cm = ctx.
+        # ctx.stack[]
+        context.previous.next = ctx
+
+    @classmethod
+    def display(cls, bytecode, context, vm, position=None, active=False):
+        to = ""
+        if active:
+            to = context.closure
+            to = f"to={to.outer_context.display()}"
+        return f"block return {to}"
 
 
 @bytecode(range(129, 131))
@@ -288,15 +307,15 @@ class OperationLongForm(object):
 
         if target == 3:  # into literal variable
             association = cm.literals[index]
-            association.instvars[1] = top
+            association.slots[1] = top
         elif target == 2:
             print('Cover me!')
             import ipdb; ipdb.set_trace()
         elif target == 1:  # temporary location
             context.stack[index] = top
         else:  # receiver variable
-            context.receiver.instvars[index] = top
-            import ipdb; ipdb.set_trace()
+            context.receiver.slots[index] = top
+            # import ipdb; ipdb.set_trace()
 
         context.pc += 2
 
@@ -435,6 +454,8 @@ class DoubleExtendSend(object):
 
 @bytecode(133)
 class SuperSend(object):
+    display_jump = 2
+
     @staticmethod
     def execute(bytecote, context, vm):
         cm = context.compiled_method
@@ -506,6 +527,38 @@ class PushThisContext(object):
         return f"push thisContext ctx={context.display()}"
 
 
+@bytecode(138)
+class PushOrPopIntoArray(object):
+    display_jump = 2
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        cm = context.compiled_method
+        array_info = cm.raw_data[context.pc + 1]
+        pop = (array_info & 0x80) > 0
+        size = array_info & 0x7F
+        array_cls = vm.memory.array
+        inst = vm.allocate(array_cls, array_size=size)
+        if pop:
+            for i in range(size):
+                inst.array[i] = context.pop()
+        context.push(inst)
+        context.pc += 2
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        array_info = cm.raw_data[position + 1]
+        pop = (array_info & 0x80) > 0
+        size = array_info & 0x7F
+        mode = f"create and push array size={size}"
+        if active and pop:
+            stacklen = len(context.stack)
+            vals = [context.stack[i].display() for i in range(stacklen-size, stacklen)]
+            mode = f"create and pop/push into array size={size} values={val.display()}"
+        return mode
+
+
 @bytecode(139)
 class CallPrimitive(object):
     display_jump = 3
@@ -519,14 +572,15 @@ class CallPrimitive(object):
             primitive = cm.raw_data[pc + 1: pc + 3].cast("h")[0]
             nb_params = cm.num_args
             args = [context.receiver]
-            for i in range(nb_params):
-                args.append(context.stack[-i - 1])
+            args.extend(context.stack[:nb_params])
             context.from_primitive = True
             result = execute_primitive(primitive, context, vm, *args)
-            context.push(result)
             return result
         except PrimitiveFail:
             context.primitive_success = False
+            # put back the parameters
+            # for _ in range(len(ctx_args)):
+            #     context.push(ctx_args.pop())
             context.pc += 3
 
     @staticmethod
@@ -536,15 +590,66 @@ class CallPrimitive(object):
         return f"primitiveCall {primitive}"
 
 
+@bytecode(range(140, 143))
+class PopIntoTempOfVector(object):
+    display_jump = 3
+
+    @staticmethod
+    def execute(bytecode, context, vm):
+        operation = bytecode - 140
+        cm = context.compiled_method
+        vect_index = cm.raw_data[context.pc + 2]
+        temp_index = cm.raw_data[context.pc + 1]
+        vector = context.stack[vect_index]
+        if operation == 2:
+            vector.slots[temp_index] = context.pop()
+        elif operation == 1:
+            vector.slots[temp_index] = context.peek()
+        else:
+            context.push(vector.slots[temp_index])
+        context.pc += 3
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        operation = bytecode - 140
+        if operation == 2:
+            operation = "pop into"
+        elif operation == 1:
+            operation = "peekStore into"
+        else:
+            operation = "push from"
+        cm = context.compiled_method
+        vect_index = cm.raw_data[position + 2]
+        temp_index = cm.raw_data[position + 1]
+        return f"{operation} vector {vect_index} at {temp_index}"
+
+
 @bytecode(143)
 class PushClosure(object):
     display_jump = 4
 
     @staticmethod
     def execute(bytecode, context, vm):
-        closure = context.block_closure(context.pc)
+        cm = context.compiled_method
+        info = cm.raw_data[context.pc + 1]
+        num_copied = (info & 0xF0) >> 4
+        num_args = info & 0x0F
+
+        closure_class = vm.memory.block_closure_class
+        closure = vm.allocate(closure_class, array_size=num_copied)
+        closure.slots[0] = context.to_smalltalk_context()
+        closure.slots[1] = ImmediateInteger.create(context.pc + 4, vm.memory)
+        closure.slots[2] = ImmediateInteger.create(num_args, vm.memory)
+        copied = [context.pop() for i in range(num_copied)]
+        # copied = reversed([context.pop() for i in range(num_copied)])
+        for i, e in enumerate(copied, start=3):
+            closure.slots[i] = e
+        # for i in range(num_copied):
+        #     closure.slots[i + 3] = context.stack[i]
+
         context.push(closure)
-        context.pc += 4 + closure.size
+        size = int.from_bytes(cm.raw_data[context.pc + 2: context.pc + 4], byteorder="big")
+        context.pc += 4 + size
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -757,12 +862,13 @@ class Send1ArgSelector(object):
         index = bytecode - 224
         selector = context.compiled_method.literals[index]
         args = ""
+        receiver = ""
         if active:
             receiver = context.stack[-2]
             receiver = f"rcvr={receiver.display()}"
             args = context.stack[-1].display()
             args = f"arg={args}"
-        return f"send {selector.as_text()} {args}"
+        return f"send {selector.as_text()} {receiver} {args}"
 
 
 @bytecode(range(240, 256))
@@ -787,9 +893,10 @@ class Send2ArgSelector(object):
         index = bytecode - 240
         selector = context.compiled_method.literals[index]
         args = ""
+        receiver = ""
         if active:
             receiver = context.stack[-3]
             receiver = f"rcvr={receiver.display()}"
-            args = context.stack[-1].display(), context.stack[-2].display()
+            args = context.stack[-2].display(), context.stack[-1].display()
             args = f"args={', '.join(args)}"
-        return f"send {selector.as_text()} {args}"
+        return f"send {selector.as_text()} {receiver} {args}"

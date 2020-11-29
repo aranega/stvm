@@ -101,6 +101,10 @@ class VMMemory(object):
     def special_object_oop(self):
         return self.image.special_object_oop
 
+    @property
+    def cache(self):
+        return self.handler.cache
+
     def object_at(self, address):
         return self.handler.object_at(address)
 

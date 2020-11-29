@@ -2,13 +2,12 @@ from collections.abc import Sequence
 import struct
 
 
-def register_for(o):
+def spurobject(o):
     def func(c):
-        type_list = o if isinstance(o, tuple) else (o,)
+        type_list = o if isinstance(o, range) else (o,)
         for t in type_list:
             SpurObject.spur_implems[t] = c
         return c
-
     return func
 
 
@@ -44,6 +43,7 @@ class SubList(Sequence):
 
 class SpurObject(object):
     spur_implems = {}
+    special_subclasses = {}
     header_size = 8
 
     def __init__(self, address, memory, kind=None):
@@ -71,10 +71,11 @@ class SpurObject(object):
         address = new_address
         mem = self.memory
         header = self.memory[address:address + 8]
-        _, nb_slots = self.decode_basicinfo(header)
+        _, nb_slots, cls_index = self.decode_basicinfo(header)
         if nb_slots > 254:
             nb_slots = mem[address - 8 : address - 4].cast("I")[0]
         self.number_of_slots = nb_slots
+        self.class_index = cls_index
         self.raw_object = mem[address:address + self.header_size + (nb_slots * 8)]
         self.header = self.raw_object[:8]
         self.header1 = self.header[:4]
@@ -84,17 +85,21 @@ class SpurObject(object):
         self.raw_slots = self.raw_object[8:]
         self.slots = SubList(self.raw_slots, mem)
         self.object_format = (self.h1 & 0x1F000000) >> 24
-        self.class_index = self.h1 & 0x3FFFFF
         self.is_immutable = (self.h1 & 0x600000) > 0
         self.is_remembered = (self.h1 & 0x20000000) > 0
         self.is_pinned = (self.h1 & 0x40000000) > 0
         self.identity_hash = self.h2 & 0x3FFFFF
 
     @classmethod
+    def find_spurClass(cls, obj_format, cls_index):
+        return cls.special_subclasses.get((obj_format, cls_index), cls.spur_implems[obj_format])
+
+
+    @classmethod
     def create(cls, address, memory, class_table=False):
         header = memory[address:address + 8]
-        obj_format, _ = cls.decode_basicinfo(header)
-        SpurClass = ClassTable if class_table else cls.spur_implems[obj_format]
+        obj_format, _, cls_index = cls.decode_basicinfo(header)
+        SpurClass = ClassTable if class_table else cls.find_spurClass(obj_format, cls_index)
         obj = SpurClass(address, memory, obj_format)
         return obj
 
@@ -111,7 +116,7 @@ class SpurObject(object):
         new_object_address = self.end_address + 8
         address = self.address
         header = self.memory[address:address + 8]
-        _, nb_slots = self.decode_basicinfo(header)
+        _, nb_slots, _ = self.decode_basicinfo(header)
         if nb_slots == 0xFF:
             return self.memory.object_at(new_object_address)
         return self.memory.object_at(self.end_address)
@@ -119,9 +124,10 @@ class SpurObject(object):
     @staticmethod
     def decode_basicinfo(header):
         f, g = header.cast("I")
-        number_of_slots=(g & 0xFF000000) >> 24
-        object_format=(f & 0x1F000000) >> 24
-        return (object_format, number_of_slots)
+        number_of_slots = (g & 0xFF000000) >> 24
+        object_format = (f & 0x1F000000) >> 24
+        class_index = f & 0x3FFFFF
+        return (object_format, number_of_slots, class_index)
 
     def __getitem__(self, index):
         return self.slots[index]
@@ -161,17 +167,17 @@ class SpurObject(object):
         return self.number_of_slots
 
 
-@register_for(0)
+@spurobject(0)
 class ZeroSized(SpurObject):
     ...
 
 
-@register_for(1)
+@spurobject(1)
 class FixedSized(SpurObject):
     ...
 
 
-@register_for(2)
+@spurobject(2)
 class VariableSizedWO(SpurObject):
     ...
 
@@ -188,7 +194,7 @@ class ClassTable(VariableSizedWO):
         return line.slots[row]
 
 
-@register_for(3)
+@spurobject(3)
 class VariableSizedW(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -197,12 +203,12 @@ class VariableSizedW(SpurObject):
         self.array = self.slots[nb_instvars:]
 
 
-@register_for(4)
+@spurobject(4)
 class WeakVariableSized(SpurObject):
     ...
 
 
-@register_for(tuple(range(9, 24)))
+@spurobject(range(9, 24))
 class Indexable(SpurObject):
     indexable64 = 9
     _bits = [64, 32, 32, 16, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8]
@@ -215,15 +221,18 @@ class Indexable(SpurObject):
         self.nb_empty_cases = self._shift[shift]
 
     def __getitem__(self, index):
-        line = (index // self.nb_bits) * self.nb_bits
-        row = index % self.nb_bits
-        return self.raw_slots[line + row]
+        nbbits = self.nb_bits
+        line = (index // nbbits) * nbbits
+        offset = 8 // (64 // nbbits)
+        row = (index % nbbits) * offset
+        return int.from_bytes(self.raw_slots[line + row: line + row + offset], byteorder="little")
 
     def __iter__(self):
-        return iter(self[i] for i in range(len(self)))
+        return (self[i] for i in range(len(self)))
 
     def __len__(self):
-        return len(self.raw_slots) - self.nb_empty_cases
+        nbbytes = len(self.raw_slots) - self.nb_empty_cases
+        return nbbytes * 8 // self.nb_bits
 
     def as_text(self):
         return "".join(chr(i) for i in self)
@@ -234,11 +243,16 @@ class Indexable(SpurObject):
             result = (result << self.nb_bits) + i
         return result
 
+    def as_float(self):
+        val = self[0] << self.nb_bits | self[1]
+        val = struct.unpack(">d", struct.pack(">Q", val))[0]
+        return val
+
     def __repr__(self):
         return f"{super().__repr__()}({self.as_text()})"
 
 
-@register_for(tuple(range(24, 32)))
+@spurobject(range(24, 32))
 class CompiledMethod(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
