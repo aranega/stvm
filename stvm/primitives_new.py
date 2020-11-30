@@ -1,6 +1,7 @@
 import time
 import struct
-from spurobjects.immediate import ImmediateInteger, ImmediateFloat
+from spurobjects.immediate import ImmediateInteger as integer
+from spurobjects.immediate import ImmediateFloat
 
 
 nil = object()
@@ -23,7 +24,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
             context.push(result)
         return result
     except Exception as e:
-        if number not in (110, 113, 7, 254, 547, 71, 202):
+        if number not in (175,):
             raise PrimitiveFail
         raise e
 
@@ -61,12 +62,23 @@ def primitive(numbers):
 
 @primitive(1)
 def plus(a, b, context, vm):
-    return a.__class__.create(a.value + b.value, vm.memory)
+    res = a.value + b.value
+    try:
+        assert -1152921504606846976 <= res <= 1152921504606846975
+        return a.__class__.create(res, vm.memory)
+    except AssertionError:
+        raise PrimitiveFail
+
 
 
 @primitive(2)
 def minus(a, b, context, vm):
-    return a.__class__.create(a.value - b.value, vm.memory)
+    res = a.value - b.value
+    try:
+        assert -1152921504606846976 <= res <= 1152921504606846975
+        return a.__class__.create(res, vm.memory)
+    except AssertionError:
+        raise PrimitiveFail
 
 
 @primitive(3)
@@ -108,22 +120,42 @@ def mult(a, b, context, vm):
 def div(a, b, context, vm):
     if a.value % b.value != 0:
         raise PrimitiveFail('not divisible')
-    return a.__class__.create(a.value // b.value, vm.memory)
+    res = a.value // b.value
+    try:
+        assert -1152921504606846976 <= res <= 1152921504606846975
+        return a.__class__.create(res, vm.memory)
+    except AssertionError:
+        raise PrimitiveFail
 
 
 @primitive(11)
 def mod(a, b, context, vm):
-    return a.__class__.create(a.value % b.value, vm.memory)
+    res = a.value % b.value
+    try:
+        assert -1152921504606846976 <= res <= 1152921504606846975
+        return a.__class__.create(res, vm.memory)
+    except AssertionError:
+        raise PrimitiveFail
 
 
 @primitive(12)
 def divRound(a, b, context, vm):
-    return a.__class__.create(a.value // b.value, vm.memory)
+    res = a.value // b.value
+    try:
+        assert -1152921504606846976 <= res <= 1152921504606846975
+        return a.__class__.create(res, vm.memory)
+    except AssertionError:
+        raise PrimitiveFail
 
 
 @primitive(13)
 def quo(a, b, context, vm):
-    return a.__class__.create(a.value // b.value, vm.memory)
+    res = a.value // b.value
+    try:
+        assert -1152921504606846976 <= res <= 1152921504606846975
+        return a.__class__.create(res, vm.memory)
+    except AssertionError:
+        raise PrimitiveFail
 
 
 @primitive(14)
@@ -139,8 +171,7 @@ def bitshift(self, shift, context, vm):
         res = self.value >> (-shift.value)
     else:
         res = self.value << shift.value
-    res = self.__class__.create(res, vm.memory)
-    return res
+    return self.__class__.create(res, vm.memory)
 
 
 @primitive(40)
@@ -159,6 +190,11 @@ def at_put(self, at, val, context, vm):
     return val
 
 
+@primitive(62)
+def basicSize(self, context, vm):
+    return integer.create(len(self), vm.memory)
+
+
 @primitive(68)
 def compiledmethod_objectAt(rcvr, i, context, vm):
     return rcvr[i.value - 1]
@@ -172,6 +208,11 @@ def new(rcvr, context, vm):
 @primitive(71)
 def new(rcvr, size, context, vm):
     return vm.allocate(rcvr, array_size=size.value)
+
+
+@primitive(75)
+def basicIdentityHash(self, context, vm):
+    return integer.create(self.identity_hash, vm.memory)
 
 
 @primitive(83)
@@ -190,8 +231,20 @@ def signal(rcvr, context, vm):
 
 
 @primitive(86)
-def wait(rcvr, context, vm):
-    print("Don't wait, but should")
+def wait(self, context, vm):
+    excessSignals = self[2].value
+    if excessSignals > 0:
+        self.slots[2] = integer.create(excessSignals - 1, vm.memory)
+        return
+    print("Should put in process list")
+#     excessSignals > 0
+# ifTrue: [self storeInteger: ExcessSignalsIndex
+#          ofObject: thisReceiver
+#          withValue: excessSignals - 1]
+# ifFalse: [self addLastLink: self activeProcess
+#           toList: thisReceiver.
+# self suspendActive]
+
 
 
 @primitive(110)
@@ -222,7 +275,18 @@ def external_call(*args, context, vm):
     return plugin_function(*args, context, vm)
 
 
-# @primitive(201)
+@primitive(125)
+def signal_at_byte_left(self, threasold, context, vm):
+    print("""Tell the interpreter the low-space threshold in bytes. When the free
+	space falls below this threshold, the interpreter will signal the low-space
+	semaphore, if one has been registered.""")
+
+
+@primitive(175)
+def identity_hash(self, context, vm):
+    return integer.create(self.identity_hash, vm.memory)
+
+
 @primitive(range(201, 205))
 def closure_value(closure, *args, context, vm):
     outer_ctx = closure.outer_context
@@ -240,7 +304,6 @@ def closure_value(closure, *args, context, vm):
     start_temps = method.num_args
     stop_temps = method.num_temps
     new_context.stack.extend(outer_ctx.stack[start_temps:stop_temps])
-    # new_context.stack.extend(outer_ctx.stack)
 
     context.previous.next = new_context
     # context._previous = None  # useful?
@@ -253,7 +316,7 @@ primitive(221)(closure_value)
 @primitive(240)
 def utc_microsecond_clock(rcvr, context, vm):
     t = int(round(time.time() * 1000))
-    return ImmediateInteger.create(t, vm.memory)
+    return integer.create(t, vm.memory)
 
 
 @primitive(254)
@@ -306,7 +369,7 @@ def divFloat(a, b, context, vm):
 
 @primitive(551)
 def truncatedFloat(a, context, vm):
-    return ImmediateInteger.create(int(a.value), vm.memory)
+    return integer.create(int(a.value), vm.memory)
 
 
 @primitive(552)

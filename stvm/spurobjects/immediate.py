@@ -58,6 +58,9 @@ class ImmediateInteger(SpurObject):
     def __index__(self):
         return self.value
 
+    def __float__(self):
+        return float(self.value)
+
     def display(self):
         return str(self.value)
 
@@ -104,6 +107,9 @@ class ImmediateFloat(SpurObject):
 
     def __repr__(self):
         return f"{super().__repr__()}({self.value})"
+
+    def __float__(self):
+        return self.value
 
     def as_text(self):
         return f"{self.value}"

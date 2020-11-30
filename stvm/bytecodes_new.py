@@ -214,6 +214,7 @@ class ReturnReceiver(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(context.receiver)
+        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -227,6 +228,7 @@ class ReturnTrue(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(vm.memory.true)
+        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -238,6 +240,7 @@ class ReturnFalse(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(vm.memory.false)
+        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -249,6 +252,7 @@ class ReturnNil(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(vm.memory.nil)
+        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -259,9 +263,9 @@ class ReturnNil(object):
 class Return(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        if context.closure:
-            import ipdb; ipdb.set_trace()
-            context.previous_context = context.closure.previous_context
+        # if context.closure:
+        #     context.previous_context = context.closure.previous_context
+        context.pc += 1
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
@@ -280,6 +284,7 @@ class BlockReturn(object):
         # cm = ctx.
         # ctx.stack[]
         context.previous.next = ctx
+        context.pc += 1
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):

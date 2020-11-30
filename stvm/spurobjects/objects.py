@@ -220,12 +220,16 @@ class Indexable(SpurObject):
         self.nb_bits = self._bits[shift]
         self.nb_empty_cases = self._shift[shift]
 
-    def __getitem__(self, index):
+    def raw_at(self, index):
         nbbits = self.nb_bits
         line = (index // nbbits) * nbbits
         offset = 8 // (64 // nbbits)
         row = (index % nbbits) * offset
         return int.from_bytes(self.raw_slots[line + row: line + row + offset], byteorder="little")
+
+
+    def __getitem__(self, index):
+        return integer.create(self.raw_at(index), self.memory)
 
     def __iter__(self):
         return (self[i] for i in range(len(self)))
@@ -235,7 +239,10 @@ class Indexable(SpurObject):
         return nbbytes * 8 // self.nb_bits
 
     def as_text(self):
-        return "".join(chr(i) for i in self)
+        # return "".join(chr(i) for i in self)
+        raw_at = self.raw_at
+        return "".join(chr(raw_at(i)) for i in range(len(self)))
+
 
     def as_int(self):
         result = 0
@@ -244,7 +251,7 @@ class Indexable(SpurObject):
         return result
 
     def as_float(self):
-        val = self[0] << self.nb_bits | self[1]
+        val = self.raw_at(0) << self.nb_bits | self.raw_at(1)
         val = struct.unpack(">d", struct.pack(">Q", val))[0]
         return val
 
@@ -355,3 +362,6 @@ class MethodTrailer(object):
             self.size = 4
         else:
             import ipdb; ipdb.set_trace()
+
+
+from .immediate import ImmediateInteger as integer
