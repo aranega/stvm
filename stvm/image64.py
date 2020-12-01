@@ -25,9 +25,11 @@ class SpurMemoryHandler(object):
         "array": 7,
         "context_class": 10,
         "largepositiveint": 13,
+        "semaphore": 18,
         "character": 19,
         "dnuSelector": 20,
         "special_symbols": 23,
+        "process": 27,
         "block_closure_class": 36,
     }
     def __init__(self, memory):

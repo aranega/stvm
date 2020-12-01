@@ -82,7 +82,7 @@ class STVMDebugger(Cmd):
             self.vm.decode_execute(self.vm.fetch())
             if self.vm.current_context is context:
                 break
-            if self.vm.current_context is context.previous:
+            if self.vm.current_context is context.sender:
                 break
         self.do_stack("")
         self.do_list("")
@@ -96,7 +96,7 @@ class STVMDebugger(Cmd):
 
 
     def do_list(self, arg):
-        context = self.vm.current_context
+        context = self.vm.current_context.adapt_context()
         cm = context.compiled_method
         bc_start = cm.initial_pc
 
@@ -136,7 +136,8 @@ class STVMDebugger(Cmd):
 
 
     def do_stack(self, arg):
-        stack = self.vm.current_context.stack
+        context = self.vm.current_context.adapt_context()
+        stack = context.stack
         if arg.startswith("top"):
             self.navigate(stack[-1], arg[3:])
             return
@@ -147,8 +148,8 @@ class STVMDebugger(Cmd):
         print(f"    {colors.fg.orange}top     -->  {stack[-1].display()}")
         sub = stack[-2::-1]
         size = len(sub)
-        args = self.vm.current_context.compiled_method.num_args
-        temps = self.vm.current_context.compiled_method.num_temps
+        args = context.compiled_method.num_args
+        temps = context.compiled_method.num_temps
         for i, e in enumerate(sub):
             i = size - i -1
             prefix = f"    {colors.fg.darkgrey}             "
@@ -184,12 +185,12 @@ class STVMDebugger(Cmd):
 
     def do_sender(self, arg):
         context = self.vm.current_context
-        sender = context.previous
+        sender = context.sender
         s = sender
         while s != self.vm.memory.nil:
             self.print_context(s, "")
             print()
-            s = s.previous
+            s = s.sender
 
     def navigate(self, receiver, arg):
         args = [a for a in arg.strip().split(" ") if a]

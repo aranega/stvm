@@ -362,7 +362,7 @@ class SingleExtendSend(object):
         receiver = context.pop()
 
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[:nb_args] = args
         context.next = new_context
         context.pc += 2
@@ -475,7 +475,7 @@ class SuperSend(object):
         receiver = context.pop()
 
         compiled_method = vm.lookup(superclass, selector)
-        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[:nb_args] = args
         context.next = new_context
         context.pc += 2
@@ -523,7 +523,7 @@ class DuplicateTopStack(object):
 class PushThisContext(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.to_smalltalk_context()
+        ctx = context.to_smalltalk_context(vm)
         context.push(ctx)
         context.pc += 1
 
@@ -546,7 +546,7 @@ class PushOrPopIntoArray(object):
         inst = vm.allocate(array_cls, array_size=size)
         if pop:
             for i in range(size):
-                inst.array[i] = context.pop()
+                inst.slots[i] = context.pop()
         context.push(inst)
         context.pc += 2
 
@@ -560,7 +560,7 @@ class PushOrPopIntoArray(object):
         if active and pop:
             stacklen = len(context.stack)
             vals = [context.stack[i].display() for i in range(stacklen-size, stacklen)]
-            mode = f"create and pop/push into array size={size} values={val.display()}"
+            mode = f"create and pop/push into array size={size} values=[{', '.join(vals)}]"
         return mode
 
 
@@ -642,7 +642,7 @@ class PushClosure(object):
 
         closure_class = vm.memory.block_closure_class
         closure = vm.allocate(closure_class, array_size=num_copied)
-        closure.slots[0] = context.to_smalltalk_context()
+        closure.slots[0] = context.to_smalltalk_context(vm)
         closure.slots[1] = ImmediateInteger.create(context.pc + 4, vm.memory)
         closure.slots[2] = ImmediateInteger.create(num_args, vm.memory)
         copied = [context.pop() for i in range(num_copied)]
@@ -799,7 +799,7 @@ class SendSpecialMessage(object):
         args.reverse()
         receiver = context.pop()
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[:nb_params] = args
         context.next = new_context
         context.pc += 1
@@ -832,7 +832,7 @@ class Send0ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
         context.next = new_context
         context.pc += 1
 
@@ -857,7 +857,7 @@ class Send1ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[0] = arg0
 
         context.next = new_context
@@ -887,7 +887,7 @@ class Send2ArgSelector(object):
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[0] = arg0
         new_context.stack[1] = arg1
 

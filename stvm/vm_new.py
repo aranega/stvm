@@ -1,7 +1,7 @@
 import struct
 from image64 import Image
 from spurobjects.objects import *
-from spurobjects.immediate import ImmediateInteger
+from spurobjects.immediate import ImmediateInteger as integer
 from bytecodes_new import ByteCodeMap
 
 
@@ -15,12 +15,117 @@ class VM(object):
         self.allocator = MemoryAllocator(self.memory)
         self.debug = debug
         self.bytecodes_map = bytecodes_map()
+        self.new_process_waiting = False
+        self.new_process = None
+        self.semaphores = []
+        self.semaphore_index = -1
+        self.params = {
+            40: integer.create(8, self.memory),  # word size
+            44: integer.create(6854880, self.memory)  # edenSize
+        }
         self.current_context = self.initial_context()
         self.current_context.pc += 1
-        self.params = {
-            40: ImmediateInteger.create(8, self.memory),  # word size
-            44: ImmediateInteger.create(6854880, self.memory)  # edenSize
-        }
+
+    def add_last_link_list(self, link, linkedlist):
+        if self.is_empty_list(linkedlist):
+            linkedlist.slots[0] = link
+        else:
+            last_link = linkedlist.slots[1]
+            last_link.slots[0] = link
+        linkedlist.slots[1] = link
+        link.slots[3] = linkedlist
+
+    def is_empty_list(self, linkedlist):
+        return linkedlist[0] is self.memory.nil
+
+    def remove_first_link_list(self, linkedlist):
+        nil = self.memory.nil
+        first = linkedlist[0]
+        last = first
+        if last is first:
+            linkedlist.slots[0] = nil
+            linkedlist.slots[1] = nil
+        else:
+            linkedlist.slots[0] = first[0]
+        first.slots[0] = nil
+        return first
+
+    @property
+    def scheduler(self):
+        return self.memory.special_object_array[3][1]
+
+    @property
+    def active_process(self):
+        if self.new_process_waiting:
+            return self.new_process
+        return self.scheduler[1]
+
+    def transfer_to(self, process):
+        self.new_process_waiting = True
+        self.new_process = process
+
+    def asynchronous_signal(self, semaphore):
+        self.semaphore_index += 1
+        self.semaphores.append(semaphore)
+
+    def synchronous_signal(self, sem):
+        if self.is_empty_list(sem):
+            excessSignals = sem.slots[2].value
+            sem.slots[2] = integer.create(excessSignals + 1, self.memory)
+            return
+        self.resume(self.remove_first_link_list(sem))
+
+    def wake_highest_priority(self):
+        process_lists = self.scheduler[0]
+        priority = len(process_lists)
+        process_list = process_lists[priority - 1]
+        while not self.is_empty(process_list):
+            priority -= 1
+            process_list = process_lists[priority - 1]
+        return self.remove_first_link_list(process_list)
+
+    def suspend_active(self):
+        self.transfer_to(self.wake_highest_priority())
+
+    def resume(self, process):
+        active = self.active_process
+        active_priority = active[2].value
+        new_priority = process[2].value
+        if new_priority > active_priority:
+            self.sleep(active)
+            self.transfer_to(process)
+        else:
+            self.sleep(process)
+
+    def wait(self, sem):
+        excessSignals = sem[2].value
+        if excessSignals > 0:
+            sem.slots[2] = integer.create(excessSignals - 1, self.memory)
+            return
+        self.add_last_link_list(self.active_process, sem)
+        self.suspend_active()
+
+    def sleep(self, process):
+        print(f"<*> Process sleep  {process.display()}")
+        priority = process[2].value
+        process_lists = self.scheduler[0]
+        process_list = process_lists[priority - 1]
+        self.add_last_link_list(process, process_list)
+
+    def check_process_switch(self):
+        while self.semaphore_index >= 0:
+            import ipdb; ipdb.set_trace()
+
+            self.synchronous_signal(self.semaphores[self.semaphore_index])
+            self.semaphore_index -= 1
+        if self.new_process_waiting:
+            self.new_process_waiting = False
+            active = self.active_process
+            print(f"<*> Process switch {active.display()} to {self.new_process.display()}")
+            active.slots[1] = self.current_context.to_smalltalk_context(self)
+            self.scheduler.slots[1] = self.new_process
+            self.current_context = self.new_process[1].adapt_context()
+             # self.current_context.from_smalltalk_context(self.new_process[1], self)
 
     @classmethod
     def new(cls, file_name):
@@ -29,18 +134,14 @@ class VM(object):
     def run(self):
         ...
 
-    @property
-    def active_process(self):
-        instance = self.memory.special_object_array[3][1]
-        active_process = instance[1]
-        return active_process
-
     def initial_context(self):
         process = self.active_process
         context = process[1]
-        return VMContext.from_smalltalk_context(context, self)
+        return context.adapt_context()
+        # return VMContext.from_smalltalk_context(context, self)
 
     def fetch(self):
+        self.check_process_switch()
         return self.current_context.fetch_bytecode()
 
     def decode_execute(self, bytecode):
@@ -113,10 +214,11 @@ class MemoryAllocator(object):
 
 
 class VMContext(object):
-    def __init__(self, receiver, compiled_method, vm):
-        self.vm = vm
+    def __init__(self, receiver, compiled_method, memory):
+        # self.vm = vm
+        self.memory = memory
         self.stcontext = None
-        nil = self.vm.memory.nil
+        nil = memory.nil
         self.receiver = receiver
         self.compiled_method = compiled_method
         self.pc = 0
@@ -166,49 +268,56 @@ class VMContext(object):
 
     @previous.setter
     def previous(self, context):
-        self._previous = context
-        context._next = self
+        adapt = context.adapt_context()
+        self._previous = adapt
+        adapt._next = self
 
     @property
     def sender(self):
         return self.previous
 
-    @classmethod
-    def from_smalltalk_context(cls, st_context, vm):
-        if st_context is st_context.memory.nil:
-            return st_context.memory.nil
-        cm = st_context.instvars[3]
-        context = cls(st_context.instvars[5], cm, vm)
-        stackp = st_context[2]
-        context.stack[:] = st_context.array[:stackp.value]
-        context.pc = st_context[1].value
-        if st_context[0] is not st_context.memory.nil:
-            context.previous = st_context[0]
-        else:
-            context._previous = st_context[0]
+    # @classmethod
+    # def from_smalltalk_context(cls, st_context):
+    #     memory = st_context.memory
+    #     if st_context is memory.nil:
+    #         return memory.nil
+    #     if isinstance(st_context, cls):
+    #         return st_context
+    #     cm = st_context.instvars[3]
+    #     context = cls(st_context.instvars[5], cm, memory)
+    #     stackp = st_context[2]
+    #     context.stack[:] = st_context.array[:stackp.value]
+    #     context.pc = st_context[1].value
+    #     if st_context[0] is not memory.nil:
+    #         context.previous = st_context[0]
+    #     else:
+    #         context._previous = st_context[0]
         return context
 
-    def to_smalltalk_context(self):
+    def adapt_context(self):
+        return self
+
+    def to_smalltalk_context(self, vm):
         if self.stcontext:
             return self.stcontext
-        memory = self.vm.memory
+        memory = vm.memory
         stclass = self.class_
         nil = memory.nil
         frame_size = self.compiled_method.frame_size
-        ctx = self.vm.allocate(stclass, array_size=frame_size)
+        ctx = vm.allocate(stclass, array_size=frame_size)
         if self.sender != nil:
             if isinstance(self.sender, VMContext):
-                ctx.slots[0] = self.sender.to_smalltalk_context()
+                ctx.slots[0] = self.sender.to_smalltalk_context(vm)
             else:
                 ctx.slots[0] = self.sender
         else:
             ctx.slots[0] = nil
-        ctx.slots[1] = ImmediateInteger.create(self.pc, memory)
-        ctx.slots[2] = ImmediateInteger.create(len(self.stack), memory)
+        ctx.slots[1] = integer.create(self.pc, memory)
+        ctx.slots[2] = integer.create(len(self.stack), memory)
         ctx.slots[3] = self.compiled_method
         if self.closure != nil:
             if isinstance(self.closure, VMContext):
-                ctx.slots[4] = self.closure.to_smalltalk_context()
+                ctx.slots[4] = self.closure.to_smalltalk_context(vm)
             else:
                 ctx.slots[4] = self.closure
         else:
@@ -244,8 +353,8 @@ class VMContext(object):
     def slots(self):
         # FAKE STACK/SLOTS
         mem = self.compiled_method.memory
-        pc = ImmediateInteger.create(self.pc, mem)
-        stakfp = ImmediateInteger.create(len(self.stack), mem)
+        pc = integer.create(self.pc, mem)
+        stakfp = integer.create(len(self.stack), mem)
         outer = self.closure
         if self.closure is None:
             outer = mem.nil
@@ -254,7 +363,7 @@ class VMContext(object):
 
     @property
     def class_(self):
-        return self.receiver.memory.context_class
+        return self.memory.context_class
 
 
 if __name__ == "__main__":
@@ -267,5 +376,5 @@ if __name__ == "__main__":
     #         continue
     #     print(i, e.name)
 
-    i = ImmediateInteger.create(45, vm.memory)
+    i = integer.create(45, vm.memory)
     print(i.kind)

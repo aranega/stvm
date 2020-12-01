@@ -24,7 +24,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
             context.push(result)
         return result
     except Exception as e:
-        if number not in (175,):
+        if number not in (86, 85):
             raise PrimitiveFail
         raise e
 
@@ -218,7 +218,7 @@ def basicIdentityHash(self, context, vm):
 @primitive(83)
 def perform(rcvr, selector, *args, context, vm):
     method = vm.lookup(rcvr.class_, selector)
-    new_context = context.__class__(rcvr, method, vm)
+    new_context = context.__class__(rcvr, method, vm.memory)
     new_context.stack[:len(args)] = args
     context.previous.next = new_context
     # context._previous = None  # useful?
@@ -226,26 +226,13 @@ def perform(rcvr, selector, *args, context, vm):
 
 
 @primitive(85)
-def signal(rcvr, context, vm):
-    print("Don't signal, but should")
+def signal(semaphore, context, vm):
+    vm.synchronous_signal(semaphore)
 
 
 @primitive(86)
-def wait(self, context, vm):
-    excessSignals = self[2].value
-    if excessSignals > 0:
-        self.slots[2] = integer.create(excessSignals - 1, vm.memory)
-        return
-    print("Should put in process list")
-#     excessSignals > 0
-# ifTrue: [self storeInteger: ExcessSignalsIndex
-#          ofObject: thisReceiver
-#          withValue: excessSignals - 1]
-# ifFalse: [self addLastLink: self activeProcess
-#           toList: thisReceiver.
-# self suspendActive]
-
-
+def wait(semaphore, context, vm):
+    vm.wait(semaphore)
 
 @primitive(110)
 def identity(rcvr, arg, context, vm):
@@ -292,7 +279,7 @@ def closure_value(closure, *args, context, vm):
     outer_ctx = closure.outer_context
     method = outer_ctx.compiled_method
     rcvr = outer_ctx.receiver
-    new_context = context.__class__(rcvr, method, vm)
+    new_context = context.__class__(rcvr, method, vm.memory)
     new_context.pc = closure.startpc.value
     new_context.closure = closure
     # new_context.stack[:len(args)] = args
