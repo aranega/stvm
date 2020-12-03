@@ -1,4 +1,5 @@
 from functools import lru_cache
+import mmap
 from .image_reader32 import Image, create_instance
 
 
@@ -10,8 +11,9 @@ class VM(object):
         self.image = None
 
     def open_image(self, image_file="/home/vince/dev/pharo/images/32bits/32bits.image"):
-        with open(image_file, "rb") as f:
-            self.image = Image(bytearray(f.read()))
+        with open(image_file, "r+b") as f:
+            m = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+            self.image = Image(m)
             self.mem = self.image.mem
             self.image_file = image_file
             self.memory_allocator = MemoryAllocator(self.mem)

@@ -410,16 +410,21 @@ class Memory(object):
 
     @property
     def false(self):
-        return self.special_object_array[1]
+        a = self.special_object_array[1]
+        print(a.address)
+        return a
 
     @property
     def true(self):
-        return self.special_object_array[2]
+        a = self.special_object_array[2]
+        print(a.address)
+        return a
 
     @property
     @lru_cache()
     def classes_table(self):
         extended_header_size = 8
+        print("sqd", self.true.next_object.address)
         return self.__getitem__(self.true.next_object.end_address + extended_header_size, class_table=True)
 
     @property
@@ -456,15 +461,16 @@ class VM(object):
         self.image = None
 
     def open_image(
-        self, image_file="/home/vince/dev/pharo/images/ParseDump/ParseDump.image"
+        self, image_file="Pharo8.0.image"
     ):
         with open(image_file, "rb") as f:
             self.image = Image(f.read())
             self.mem = self.image.mem
 
 
-# vm = VM()
-# vm.open_image()
+vm = VM()
+vm.open_image()
+vm.mem.classes_table
 #
 #
 # def scan(mem, size=10):

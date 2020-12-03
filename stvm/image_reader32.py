@@ -191,7 +191,8 @@ class SpurObject(Sequence):
 
     def __getitem__(self, index):
         address = self.slots[index]
-        return self.memory[bytes(address)]
+        address = int.from_bytes(address, "little")
+        return self.memory[address]
 
     def __iter__(self):
         return iter((self[i] for i in range(len(self))))
@@ -258,9 +259,9 @@ class ClassTable(VariableSizedWO):
             return self.search_class(index)
         page = index // 1024
         row = index % 1024
-        line = self.memory[bytes(self.slots[page])]
+        line = self.memory[int.from_bytes(self.slots[page], "little")]
         row_address = line.slots[row]
-        return self.memory[bytes(row_address)]
+        return self.memory[int.from_bytes(row_address, "little")]
 
     def search_class(self, name):
         for c in self:
@@ -467,12 +468,15 @@ class BlockClosure(object):
 
 
 class ImmediateInteger(object):
-    def __init__(self, raw=None, memory=None):
+    def __init__(self, raw=None, memory=None, address=None):
         if raw:
             self.address = int.from_bytes(raw, "little")
             self.value = struct.unpack("i", raw)[0] >> 1
         if memory:
             self.class_ = memory.smallinteger
+        if address:
+            self.address = address
+            self.value = address >> 1
 
     # @property
     # def instvars(self):
@@ -538,13 +542,16 @@ def build_char(value, memory):
 
 
 class ImmediateChar(object):
-    def __init__(self, raw=None, memory=None):
+    def __init__(self, raw=None, memory=None, address=None):
         if raw:
             self.address = int.from_bytes(raw, "little")
             self.value = chr(self.address >> 2 & 0xFFFFFFFF)
         if memory:
             self.memory = memory
             self.class_ = memory.character
+        if address:
+            self.address = address
+            self.value = address >> 2 & 0xFFFFFFFF
 
     def __getitem__(self, index):
         return self
@@ -568,18 +575,12 @@ class MemoryFragment(Sequence):
 
     def __getitem__(self, index):
         address = self.slots[index]
-        return self.memory[bytes(address)]
+        address = int.from_bytes(address, "little")
+        return self.memory[address]
 
     def __setitem__(self, i, item):
         if isinstance(i, slice):
             raise NotImplementedError()
-        if isinstance(item, ImmediateInteger):
-            # struct.pack_into("I", self.slots[i], 0, (item.value << 1) | 0x1)
-            struct.pack_into("I", self.slots[i], 0, item.address)
-            return
-        if isinstance(item, ImmediateChar):
-            struct.pack_into("I", self.slots[i], 0, item.address)
-            return
         struct.pack_into("I", self.slots[i], 0, item.address)
 
 
@@ -628,7 +629,15 @@ class Memory(object):
 
 
     def __init__(self, image_header, raw):
-        self.raw = Memory.InnerMemory(image_header, raw)
+        # self.raw = Memory.InnerMemory(image_header, raw)
+        with open("image.mem", "wb") as out:
+            out.seek((len(raw) + image_header.old_base_address) - 1)
+            out.write(b'\0')
+        f = open("image.mem", "r+b")
+        import mmap
+        m = mmap.mmap(f.fileno(), 0)
+        m[image_header.old_base_address:] = raw
+        self.raw = m
         self.image_header = image_header
 
     def address_points_to(self, address):
@@ -654,14 +663,10 @@ class Memory(object):
 
     @lru_cache()
     def __getitem__(self, address, class_table=False):
-        raw = address
-        if isinstance(address, (bytes, bytearray)):
-            address = int.from_bytes(address, "little")
-
         if self.address_points_to(address) in (AddressType.SMALLINT, AddressType.SMALLINT_2):
-            return ImmediateInteger(raw, self)
+            return ImmediateInteger(address=address, memory=self)
         if self.address_points_to(address) is AddressType.CHAR:
-            return ImmediateChar(raw, self)
+            return ImmediateChar(address=address, memory=self)
 
         header = self._decode_header(address)
         if class_table:
