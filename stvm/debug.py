@@ -160,15 +160,19 @@ class STVMDebugger(Cmd):
             print(f"{prefix}{e.display()}")
         print(colors.reset)
 
-    def do_print_context(self, arg):
+    def do_context(self, arg):
         context = self.vm.current_context
         self.print_context(context, arg)
 
     def print_context(self, context, arg):
         print("Current context")
         print("method  ", context.compiled_method.selector.as_text())
-        print("receiver", context.receiver.display())
+        if context.closure is None:
+            print("closure   nil")
+        else:
+            print("closure", context.closure.display())
         print("sender  ", context.sender.display())
+        print("receiver", context.receiver.display())
         print("stack:   [", *[s.display() for s in context.stack], ']')
         print("args:    [", *[s.display() for s in context.args], ']')
         print("temps:   [", *[s.display() for s in context.temps], ']')
@@ -232,6 +236,7 @@ class STVMDebugger(Cmd):
                 print("", hex(receiver[i]), end="")
             print()
             print(f'text "{receiver.as_text()}"')
+            print(f'uint {receiver.as_int()}')
             return
         for i in range(len(receiver.slots)):
             print(f"{i:2}   ", receiver[i].display())
@@ -315,4 +320,6 @@ class colors:
 
 if __name__ == '__main__':
     STVMDebugger(VM.new('Pharo8.0.image')).cmdloop()
+    # STVMDebugger(VM.new('Cuis5.0-4426.image')).cmdloop()
+    # STVMDebugger(VM.new('ns-2020-03-02.64.image')).cmdloop()
     # STVMDebugger(VM.new('Pharo9.0-SNAPSHOT-64bit-12edded.image')).cmdloop()

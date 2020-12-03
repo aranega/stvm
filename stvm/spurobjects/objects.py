@@ -243,12 +243,14 @@ class Indexable(SpurObject):
         raw_at = self.raw_at
         return "".join(chr(raw_at(i)) for i in range(len(self)))
 
-
     def as_int(self):
         result = 0
         for i in reversed(self):
-            result = (result << self.nb_bits) + i
+            result = (result << self.nb_bits) + i.value
         return result
+
+    def __int__(self):
+        return self.as_int()
 
     def as_float(self):
         val = self.raw_at(0) << self.nb_bits | self.raw_at(1)
@@ -263,7 +265,7 @@ class Indexable(SpurObject):
 class CompiledMethod(SpurObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        method_format = self[0].value
+        method_format = super().__getitem__(0).value
         num_literals = method_format & 0x7FFF
         self.initial_pc = (num_literals + 1) * 8
 
@@ -285,6 +287,11 @@ class CompiledMethod(SpurObject):
         # self.trailer_byte = raw[-1]
         self.trailer = MethodTrailer(raw[-1], self)
         self.bytecodes = raw[num_literals * 8 + 8:-self.trailer.size]
+
+    def __getitem__(self, i):
+        if not isinstance(i, slice) and i > self.initial_pc:
+            return integer.create(self.raw_data[i], self.memory)
+        return super().__getitem__(i)
 
     def size(self):
         return self.number_of_slots * 8 - (self.kind - 24)

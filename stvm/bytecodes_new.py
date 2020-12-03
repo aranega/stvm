@@ -214,7 +214,6 @@ class ReturnReceiver(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(context.receiver)
-        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -228,7 +227,6 @@ class ReturnTrue(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(vm.memory.true)
-        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -240,7 +238,6 @@ class ReturnFalse(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(vm.memory.false)
-        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -252,7 +249,6 @@ class ReturnNil(object):
     @staticmethod
     def execute(bytecode, context, vm):
         context.push(vm.memory.nil)
-        context.pc += 1
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -260,12 +256,12 @@ class ReturnNil(object):
 
 
 @bytecode(124)
-class Return(object):
+class ReturnTop(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        # if context.closure:
-        #     context.previous_context = context.closure.previous_context
-        context.pc += 1
+        if context.closure:
+            new_active = context.closure.outer_context.sender
+            context.previous = new_active
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
@@ -280,18 +276,20 @@ class Return(object):
 class BlockReturn(object):
     @staticmethod
     def execute(bytecode, context, vm):
+        if not context.closure:
+            import ipdb; ipdb.set_trace()
+            
         ctx = context.closure.outer_context
         # cm = ctx.
         # ctx.stack[]
         context.previous.next = ctx
-        context.pc += 1
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
         to = ""
         if active:
             to = context.closure
-            to = f"to={to.outer_context.display()}"
+            # to = f"to={to.outer_context.display()}"
         return f"block return {to}"
 
 
@@ -415,7 +413,9 @@ class DoubleExtendSend(object):
         elif operation == 5:  # store receiver variable
             import ipdb; ipdb.set_trace()
         elif operation == 6:  # store-pop recevier variable
-            import ipdb; ipdb.set_trace()
+            v = context.pop()
+            rcvr = context.receiver
+            rcvr.slots[index] = v
         elif operation == 7:  # store literal variable
             import ipdb; ipdb.set_trace()
         context.pc += 3
@@ -450,7 +450,7 @@ class DoubleExtendSend(object):
             args = f"index={index} TODO"
         elif operation == 6:  # store-pop recevier variable
             action = "storePopInRcvrInstvar"
-            args = f"index={index} TODO"
+            args = f"index={index}"
         elif operation == 7:  # store literal variable
             action = "storeLitVar"
             args = f"index={index} TODO"

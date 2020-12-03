@@ -32,6 +32,10 @@ class Context(VariableSizedW):
     def stackp(self):
         return self[2]
 
+    @stackp.setter
+    def stackp(self, value):
+        self[2] = value
+
     @property
     def compiled_method(self):
         return self[3]

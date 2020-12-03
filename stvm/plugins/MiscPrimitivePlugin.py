@@ -1,7 +1,7 @@
 from spurobjects.immediate import ImmediateInteger as integer
 
 
-def primitiveStringHash(aString, species_hash, context, vm):
+def primitiveStringHash(cls, aString, species_hash, context, vm):
     aString = aString.as_text()
     species_hash = species_hash.value
     hash_val = species_hash  & 0xFFFFFFF

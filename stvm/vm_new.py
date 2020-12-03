@@ -1,4 +1,5 @@
 import struct
+import time
 from image64 import Image
 from spurobjects.objects import *
 from spurobjects.immediate import ImmediateInteger as integer
@@ -25,6 +26,7 @@ class VM(object):
         }
         self.current_context = self.initial_context()
         self.current_context.pc += 1
+        self.nextWakeupUsecs = 0
 
     def add_last_link_list(self, link, linkedlist):
         if self.is_empty_list(linkedlist):
@@ -79,9 +81,9 @@ class VM(object):
         process_lists = self.scheduler[0]
         priority = len(process_lists)
         process_list = process_lists[priority - 1]
-        while not self.is_empty(process_list):
+        while self.is_empty_list(process_list):
             priority -= 1
-            process_list = process_lists[priority - 1]
+            process_list = process_lists[priority]
         return self.remove_first_link_list(process_list)
 
     def suspend_active(self):
@@ -92,9 +94,11 @@ class VM(object):
         active_priority = active[2].value
         new_priority = process[2].value
         if new_priority > active_priority:
+            print(f"<$> Sleep asked by {process.display()}")
             self.sleep(active)
             self.transfer_to(process)
         else:
+            # print(f"<$> Sleep asked by {process.display()}")
             self.sleep(process)
 
     def wait(self, sem):
@@ -114,8 +118,6 @@ class VM(object):
 
     def check_process_switch(self):
         while self.semaphore_index >= 0:
-            import ipdb; ipdb.set_trace()
-
             self.synchronous_signal(self.semaphores[self.semaphore_index])
             self.semaphore_index -= 1
         if self.new_process_waiting:
@@ -125,7 +127,6 @@ class VM(object):
             active.slots[1] = self.current_context.to_smalltalk_context(self)
             self.scheduler.slots[1] = self.new_process
             self.current_context = self.new_process[1].adapt_context()
-             # self.current_context.from_smalltalk_context(self.new_process[1], self)
 
     @classmethod
     def new(cls, file_name):
@@ -140,7 +141,19 @@ class VM(object):
         return context.adapt_context()
         # return VMContext.from_smalltalk_context(context, self)
 
+    def check_interrupts(self):
+        memory = self.memory
+        if self.nextWakeupUsecs != 0:
+            now = int(round(time.time() * 1000000))
+            if now >= self.nextWakeupUsecs:
+                self.nextWakeupUsecs = 0
+                sema = memory.timer_semaphore
+                if sema is not memory.nil:
+                    self.asynchronous_signal(sema)
+                    print(f"<*> Signal timer semaphore {sema.display()}")
+
     def fetch(self):
+        self.check_interrupts()
         self.check_process_switch()
         return self.current_context.fetch_bytecode()
 
@@ -276,24 +289,6 @@ class VMContext(object):
     def sender(self):
         return self.previous
 
-    # @classmethod
-    # def from_smalltalk_context(cls, st_context):
-    #     memory = st_context.memory
-    #     if st_context is memory.nil:
-    #         return memory.nil
-    #     if isinstance(st_context, cls):
-    #         return st_context
-    #     cm = st_context.instvars[3]
-    #     context = cls(st_context.instvars[5], cm, memory)
-    #     stackp = st_context[2]
-    #     context.stack[:] = st_context.array[:stackp.value]
-    #     context.pc = st_context[1].value
-    #     if st_context[0] is not memory.nil:
-    #         context.previous = st_context[0]
-    #     else:
-    #         context._previous = st_context[0]
-        return context
-
     def adapt_context(self):
         return self
 
@@ -356,7 +351,7 @@ class VMContext(object):
         pc = integer.create(self.pc, mem)
         stakfp = integer.create(len(self.stack), mem)
         outer = self.closure
-        if self.closure is None:
+        if outer is None:
             outer = mem.nil
         stack = [self.sender, pc, stakfp, self.compiled_method, outer, self.receiver, *self.stack]
         return stack
@@ -364,6 +359,32 @@ class VMContext(object):
     @property
     def class_(self):
         return self.memory.context_class
+
+
+def print_object(receiver):
+    print("receiver", receiver.display())
+    print("object type", receiver.__class__.__name__, "kind", receiver.kind)
+    print("class", receiver.class_.name)
+    print("slots")
+    if receiver.kind in range(9, 24):
+        for i in range(len(receiver)):
+            if i > 0 and i % 8 == 0:
+                print()
+            print("", hex(receiver[i]), end="")
+        print()
+        print(f'text "{receiver.as_text()}"')
+        return
+    for i in range(len(receiver.slots)):
+        print(f"{i:2}   ", receiver[i].display())
+    if hasattr(receiver, "instvars"):
+        print("instvar in slots")
+        for i in range(len(receiver.instvars)):
+            print(f"{i:2}   ", receiver.instvars[i].display())
+    if hasattr(receiver, "array"):
+        print("array in slots")
+        for i in range(len(receiver.array)):
+            print(f"{i:2}   ", receiver.array[i].display())
+
 
 
 if __name__ == "__main__":

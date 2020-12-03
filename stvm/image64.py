@@ -28,9 +28,11 @@ class SpurMemoryHandler(object):
         "semaphore": 18,
         "character": 19,
         "dnuSelector": 20,
+        "timer_semaphore": 29,
         "special_symbols": 23,
         "process": 27,
         "block_closure_class": 36,
+        "largenegativeint": 42,
     }
     def __init__(self, memory):
         self.memory = memory
@@ -102,6 +104,10 @@ class VMMemory(object):
     @property
     def special_object_oop(self):
         return self.image.special_object_oop
+
+    @property
+    def special_array(self):
+        return self.handler.special_array
 
     @property
     def cache(self):
