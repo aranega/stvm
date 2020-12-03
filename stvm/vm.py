@@ -2,8 +2,8 @@ import struct
 import time
 from .image64 import Image
 from .spurobjects.objects import *
-from .spurobjects.immediate import ImmediateInteger as integer
-from .bytecodes_new import ByteCodeMap
+from .spurobjects import ImmediateInteger as integer
+from .bytecodes import ByteCodeMap
 
 
 class VM(object):

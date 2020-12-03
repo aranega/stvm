@@ -68,7 +68,7 @@ class Context(VariableSizedW):
     def adapt_context(self):
         if self.vm_context:
             return self.vm_context
-        from ..vm_new import VMContext
+        from ..vm import VMContext
         memory = self.memory
         cm = self[3]
         context = VMContext(self[5], cm, memory)

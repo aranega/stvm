@@ -1,8 +1,8 @@
 import time
 import struct
 import importlib
-from .spurobjects.immediate import ImmediateInteger as integer
-from .spurobjects.immediate import ImmediateFloat
+from .spurobjects import ImmediateInteger as integer
+from .spurobjects import ImmediateFloat
 
 LargeNegativeIntClass = 32
 LargePositiveIntClass = 33

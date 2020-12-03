@@ -1,6 +1,6 @@
 from cmd import Cmd
 from pprint import pprint
-from .vm_new import VM
+from .vm import VM
 
 
 class bcolors:

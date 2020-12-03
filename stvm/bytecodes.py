@@ -1,4 +1,4 @@
-from .primitives_new import execute_primitive, PrimitiveFail
+from .primitives import execute_primitive, PrimitiveFail
 from .spurobjects.immediate import ImmediateInteger
 
 
