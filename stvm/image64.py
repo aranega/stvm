@@ -1,7 +1,6 @@
-from dataclasses import dataclass
 import mmap
 import struct
-from spurobjects import SpurObject, ImmediateInteger, ImmediateFloat
+from .spurobjects import SpurObject, ImmediateInteger, ImmediateFloat
 
 
 class ByteChunk(object):

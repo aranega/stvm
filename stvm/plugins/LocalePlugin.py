@@ -1,6 +1,6 @@
 from math import ceil
 from datetime import datetime
-from spurobjects.immediate import ImmediateInteger as integer
+from ..spurobjects import ImmediateInteger as integer
 
 
 def primitiveTimezoneOffset(self, context, vm):

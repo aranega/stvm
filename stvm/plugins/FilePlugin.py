@@ -1,6 +1,7 @@
 import os
 from ..image_reader32 import build_int
 
+raise Exception
 
 def primitiveFileOpen(context, file_name, write_flag):
     file_name = file_name.obj.as_text()

@@ -1,4 +1,4 @@
-from .vm import VM
-from .bytecodes import *  # noqa
+from .vm_new import VM
+from .debug import STVMDebugger
 
-__all__ = ["VM"]
+__all__ = ["VM", "STVMDebugger"]

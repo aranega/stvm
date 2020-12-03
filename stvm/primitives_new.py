@@ -1,7 +1,8 @@
 import time
 import struct
-from spurobjects.immediate import ImmediateInteger as integer
-from spurobjects.immediate import ImmediateFloat
+import importlib
+from .spurobjects.immediate import ImmediateInteger as integer
+from .spurobjects.immediate import ImmediateFloat
 
 LargeNegativeIntClass = 32
 LargePositiveIntClass = 33
@@ -38,6 +39,8 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except PrimitiveFail as e:
         raise e
     except Exception as e:
+        if number in (117,):
+            raise e
         raise PrimitiveFail
 
 
@@ -359,8 +362,7 @@ def external_call(*args, context, vm):
     pragma = method.literals[0]
     plugin = pragma[0].as_text()
     call = pragma[1].as_text()
-    import importlib
-    plugin_module = importlib.import_module(f'plugins.{plugin}')
+    plugin_module = importlib.import_module(f'stvm.plugins.{plugin}')
     plugin_function = getattr(plugin_module, call)
     return plugin_function(*args, context, vm)
 

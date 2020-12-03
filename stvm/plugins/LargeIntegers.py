@@ -1,8 +1,10 @@
 from math import ceil
-from spurobjects.immediate import ImmediateInteger as integer
+from ..spurobjects import ImmediateInteger as integer
+
 
 LargeNegativeIntClass = 32
 LargePositiveIntClass = 33
+
 
 def primDigitSubtract(self, other, context, vm):
     return integer.create(self.value - other.value, vm.memory)

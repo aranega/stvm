@@ -1,4 +1,4 @@
-from spurobjects.immediate import ImmediateInteger as integer
+from ..spurobjects import ImmediateInteger as integer
 
 
 def primitiveStringHash(cls, aString, species_hash, context, vm):

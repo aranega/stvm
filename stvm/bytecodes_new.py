@@ -1,5 +1,5 @@
-from primitives_new import execute_primitive, PrimitiveFail
-from spurobjects.immediate import ImmediateInteger
+from .primitives_new import execute_primitive, PrimitiveFail
+from .spurobjects.immediate import ImmediateInteger
 
 
 class ByteCodeMap(object):
@@ -278,7 +278,7 @@ class BlockReturn(object):
     def execute(bytecode, context, vm):
         if not context.closure:
             import ipdb; ipdb.set_trace()
-            
+
         ctx = context.closure.outer_context
         # cm = ctx.
         # ctx.stack[]
