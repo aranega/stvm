@@ -25,12 +25,15 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     memory = vm.memory
     try:
         receiver = args[0]
-        result = primitives[number](receiver, *args[1:], context=context, vm=vm, **kwargs)
-        result = python2st(result, memory)
-        if result is None:
-            context.push(receiver)
+        fun = primitives[number]
+        result = fun(receiver, *args[1:], context=context, vm=vm, **kwargs)
+        result = receiver if result is None else result
+        if fun.activate:
+            vm.activate_context(result)
         else:
-            context.push(result)
+            result = python2st(result, memory)
+            vm.activate_context(context.previous)
+            vm.current_context.push(result)
         return result
     except KeyError:
         unimpl.add(number)
@@ -64,8 +67,9 @@ def python2st(obj, memory):
     return obj
 
 
-def primitive(numbers):
+def primitive(numbers, activate=False):
     def inner_register(fun):
+        fun.activate = activate
         if isinstance(numbers, range):
             for i in numbers:
                 primitives[i] = fun
@@ -305,14 +309,13 @@ def store_stackp(self, new_stackp, context, vm):
         self.stackp = new_stackp
 
 
-@primitive(83)
+@primitive(83, activate=True)
 def perform(rcvr, selector, *args, context, vm):
     method = vm.lookup(rcvr.class_, selector)
     new_context = context.__class__(rcvr, method, vm.memory)
     new_context.stack[:len(args)] = args
-    context.previous.next = new_context
-    # context._previous = None  # useful?
-    vm.current_context = new_context
+    new_context.previous = context.previous
+    return new_context
 
 
 @primitive(85)
@@ -393,7 +396,7 @@ def identity_hash(self, context, vm):
     return integer.create(self.identity_hash, vm.memory)
 
 
-@primitive(range(201, 205))
+@primitive(range(201, 205), activate=True)
 def closure_value(closure, *args, context, vm):
     outer_ctx = closure.outer_context
     method = outer_ctx.compiled_method
@@ -401,22 +404,17 @@ def closure_value(closure, *args, context, vm):
     new_context = context.__class__(rcvr, method, vm.memory)
     new_context.pc = closure.startpc.value
     new_context.closure = closure
-    # new_context.stack[:len(args)] = args
-    # new_context.stack[len(args):] = closure.copied
-    # new_context.stack[]
-
     new_context.stack = list(args)
     new_context.stack.extend(reversed(closure.copied))
     start_temps = method.num_args
     stop_temps = method.num_temps
     new_context.stack.extend(outer_ctx.stack[start_temps:stop_temps])
 
-    context.previous.next = new_context
-    # context._previous = None  # useful?
-    vm.current_context = new_context
+    new_context.previous = context.previous
+    return new_context
 
 
-@primitive(range(211, 223))
+@primitive(range(211, 223), activate=True)
 def closure_value(closure, *args, context, vm):
     outer_ctx = closure.outer_context
     method = outer_ctx.compiled_method
@@ -424,9 +422,6 @@ def closure_value(closure, *args, context, vm):
     new_context = context.__class__(rcvr, method, vm.memory)
     new_context.pc = closure.startpc.value
     new_context.closure = closure
-    # new_context.stack[:len(args)] = args
-    # new_context.stack[len(args):] = closure.copied
-    # new_context.stack[]
 
     new_context.stack = list(args)
     new_context.stack.extend(reversed(closure.copied))
@@ -434,12 +429,8 @@ def closure_value(closure, *args, context, vm):
     stop_temps = method.num_temps
     new_context.stack.extend(outer_ctx.stack[start_temps:stop_temps])
 
-    context.previous.next = new_context
-    # context._previous = None  # useful?
-    vm.current_context = new_context
-#
-# primitive(221)(closure_value)
-# primitive(222)(closure_value)
+    new_context.previous = context.previous
+    return new_context
 
 
 @primitive(211)

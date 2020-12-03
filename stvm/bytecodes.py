@@ -1,5 +1,5 @@
 from .primitives import execute_primitive, PrimitiveFail
-from .spurobjects.immediate import ImmediateInteger
+from .spurobjects import ImmediateInteger as integer
 
 
 class ByteCodeMap(object):
@@ -199,7 +199,7 @@ class PushInt(object):
     @staticmethod
     def execute(bytecode, context, vm):
         value = bytecode - 117
-        immediate = ImmediateInteger.create(value, vm.memory)
+        immediate = integer.create(value, vm.memory)
         context.push(immediate)
         context.pc += 1
 
@@ -213,7 +213,9 @@ class PushInt(object):
 class ReturnReceiver(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        context.push(context.receiver)
+        ctx = context.previous
+        ctx.push(context.receiver)
+        vm.activate_context(ctx)
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -226,7 +228,9 @@ class ReturnReceiver(object):
 class ReturnTrue(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        context.push(vm.memory.true)
+        ctx = context.previous
+        ctx.push(vm.memory.true)
+        vm.activate_context(ctx)
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -237,7 +241,9 @@ class ReturnTrue(object):
 class ReturnFalse(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        context.push(vm.memory.false)
+        ctx = context.previous
+        ctx.push(vm.memory.false)
+        vm.activate_context(ctx)
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -248,7 +254,9 @@ class ReturnFalse(object):
 class ReturnNil(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        context.push(vm.memory.nil)
+        ctx = context.previous
+        ctx.push(vm.memory.nil)
+        vm.activate_context(ctx)
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -260,8 +268,11 @@ class ReturnTop(object):
     @staticmethod
     def execute(bytecode, context, vm):
         if context.closure:
-            new_active = context.closure.outer_context.sender
-            context.previous = new_active
+            ctx = context.closure.outer_context.sender.adapt_context()
+        else:
+            ctx = context.previous
+        ctx.push(context.pop())
+        vm.activate_context(ctx)
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
@@ -276,21 +287,20 @@ class ReturnTop(object):
 class BlockReturn(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        if not context.closure:
-            import ipdb; ipdb.set_trace()
-
-        ctx = context.closure.outer_context
-        # cm = ctx.
-        # ctx.stack[]
-        context.previous.next = ctx
+        ctx = context.previous
+        ctx.push(context.pop())
+        vm.activate_context(ctx)
 
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
         to = ""
+        top = ""
         if active:
-            to = context.closure
-            # to = f"to={to.outer_context.display()}"
-        return f"block return {to}"
+            top = context.stack[-1]
+            top = f"{top.display()}"
+            to = context.previous
+            to = f"to={to.display()}"
+        return f"block return {top} {to}"
 
 
 @bytecode(range(129, 131))
@@ -318,8 +328,6 @@ class OperationLongForm(object):
             context.stack[index] = top
         else:  # receiver variable
             context.receiver.slots[index] = top
-            # import ipdb; ipdb.set_trace()
-
         context.pc += 2
 
     @classmethod
@@ -362,8 +370,9 @@ class SingleExtendSend(object):
         compiled_method = vm.lookup(receiver.class_, selector)
         new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[:nb_args] = args
-        context.next = new_context
         context.pc += 2
+        new_context.previous = context
+        vm.current_context = new_context
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -378,7 +387,6 @@ class SingleExtendSend(object):
             rcvr = f"rcvr={rcvr.display()}"
             args = [x.display() for x in context.stack[-nb_args:]]
             args = f"args={', '.join(reversed(args))}"
-
         return f"<%> send {selector} {rcvr} {args}"
 
 
@@ -477,8 +485,9 @@ class SuperSend(object):
         compiled_method = vm.lookup(superclass, selector)
         new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[:nb_args] = args
-        context.next = new_context
         context.pc += 2
+        new_context.previous = context
+        vm.current_context = new_context
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -583,9 +592,6 @@ class CallPrimitive(object):
             return result
         except PrimitiveFail:
             context.primitive_success = False
-            # put back the parameters
-            # for _ in range(len(ctx_args)):
-            #     context.push(ctx_args.pop())
             context.pc += 3
 
     @staticmethod
@@ -643,8 +649,8 @@ class PushClosure(object):
         closure_class = vm.memory.block_closure_class
         closure = vm.allocate(closure_class, array_size=num_copied)
         closure.slots[0] = context.to_smalltalk_context(vm)
-        closure.slots[1] = ImmediateInteger.create(context.pc + 4, vm.memory)
-        closure.slots[2] = ImmediateInteger.create(num_args, vm.memory)
+        closure.slots[1] = integer.create(context.pc + 4, vm.memory)
+        closure.slots[2] = integer.create(num_args, vm.memory)
         copied = [context.pop() for i in range(num_copied)]
         # copied = reversed([context.pop() for i in range(num_copied)])
         for i, e in enumerate(copied, start=3):
@@ -801,8 +807,9 @@ class SendSpecialMessage(object):
         compiled_method = vm.lookup(receiver.class_, selector)
         new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[:nb_params] = args
-        context.next = new_context
         context.pc += 1
+        new_context.previous = context
+        vm.current_context = new_context
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -833,8 +840,9 @@ class Send0ArgSelector(object):
         selector = context.compiled_method.literals[index]
         compiled_method = vm.lookup(receiver.class_, selector)
         new_context = context.__class__(receiver, compiled_method, vm.memory)
-        context.next = new_context
         context.pc += 1
+        new_context.previous = context
+        vm.current_context = new_context
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -859,9 +867,9 @@ class Send1ArgSelector(object):
         compiled_method = vm.lookup(receiver.class_, selector)
         new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[0] = arg0
-
-        context.next = new_context
         context.pc += 1
+        new_context.previous = context
+        vm.current_context = new_context
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):
@@ -890,9 +898,9 @@ class Send2ArgSelector(object):
         new_context = context.__class__(receiver, compiled_method, vm.memory)
         new_context.stack[0] = arg0
         new_context.stack[1] = arg1
-
-        context.next = new_context
         context.pc += 1
+        new_context.previous = context
+        vm.current_context = new_context
 
     @staticmethod
     def display(bytecode, context, vm, position=None, active=False):

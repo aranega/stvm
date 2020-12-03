@@ -83,10 +83,16 @@ class Context(VariableSizedW):
         return context
 
     def pop(self):
-        self.adapt_context().pop()
+        return self.adapt_context().pop()
 
     def push(self, v):
         self.adapt_context().push(v)
+
+    def fetch_bytecode(self):
+        return self.adapt_context().fetch_bytecode()
+
+    def peek(self):
+        return self.adapt_context().peek()
 
 
 @spurobject(3, class_index=CLOSURE_CLASS)

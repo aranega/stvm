@@ -7,8 +7,6 @@ from .bytecodes import ByteCodeMap
 
 
 class VM(object):
-    require_forward_switch = [131, 132, 133, *range(176, 256)]
-    require_backward_switch = [*range(120, 126)]
 
     def __init__(self, image, bytecodes_map=ByteCodeMap, debug=False):
         self.image = image
@@ -159,21 +157,10 @@ class VM(object):
 
     def decode_execute(self, bytecode):
         result = self.bytecodes_map.execute(bytecode, self.current_context, self)
-        context = self.current_context
-        if bytecode in self.require_forward_switch and self.current_context.next:
-            self.current_context = context.next
-        elif context.from_primitive and context.primitive_success:
-            if context.next:
-                self.current_context = context.next
-            else:
-                context.previous.push(context.pop())
-                self.current_context = context.previous
-                self.current_context.next = None
-        elif bytecode in self.require_backward_switch:
-            context.previous.push(context.pop())
-            self.current_context = context.previous
-            self.current_context.next = None
         return result
+
+    def activate_context(self, context):
+        self.current_context = context
 
     def lookup(self, cls, selector):
         nil = self.memory.nil
@@ -238,7 +225,6 @@ class VMContext(object):
         self.closure = nil
         self.pc = compiled_method.initial_pc
         self._previous = None
-        self._next = None
         self.stack = self._pre_setup(compiled_method)
         self.primitive_success = True
         self.from_primitive = False
@@ -263,27 +249,17 @@ class VMContext(object):
         return self.stack[cm.num_args: cm.num_temps]
 
     @property
-    def next(self):
-        return self._next
-
-    @next.setter
-    def next(self, context):
-        # if self._next:
-        #     self._next._previous = None
-        self._next = context
-        if context:
-            context._previous = self
-            # context.sender = self.receiver
-
-    @property
     def previous(self):
         return self._previous
 
     @previous.setter
     def previous(self, context):
-        adapt = context.adapt_context()
-        self._previous = adapt
-        adapt._next = self
+        try:
+            adapt = context.adapt_context()
+            self._previous = adapt
+        except Exception:
+            import ipdb; ipdb.set_trace()
+            self._previous = self.memory.nil
 
     @property
     def sender(self):
