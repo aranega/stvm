@@ -85,6 +85,7 @@ class VM(object):
         return self.remove_first_link_list(process_list)
 
     def suspend_active(self):
+        print(f"<$> Suspend active context")
         self.transfer_to(self.wake_highest_priority())
 
     def resume(self, process):
@@ -92,7 +93,7 @@ class VM(object):
         active_priority = active[2].value
         new_priority = process[2].value
         if new_priority > active_priority:
-            print(f"<$> Sleep asked by {process.display()}")
+            print(f"<$> Sleep asked for {active.display()} by {process.display()}")
             self.sleep(active)
             self.transfer_to(process)
         else:
@@ -150,10 +151,13 @@ class VM(object):
                     self.asynchronous_signal(sema)
                     print(f"<*> Signal timer semaphore {sema.display()}")
 
-    def fetch(self):
-        self.check_interrupts()
-        self.check_process_switch()
+    def low_fetch(self):
         return self.current_context.fetch_bytecode()
+
+    def fetch(self):
+        # self.check_interrupts()
+        self.check_process_switch()
+        return self.low_fetch()
 
     def decode_execute(self, bytecode):
         result = self.bytecodes_map.execute(bytecode, self.current_context, self)
@@ -298,6 +302,7 @@ class VMContext(object):
         for i, v in enumerate(self.stack):
             ctx.stack[i] = v
 
+        ctx.vm_context = self
         self.stcontext = ctx
         return ctx
 
