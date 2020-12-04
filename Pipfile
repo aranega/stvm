@@ -8,6 +8,7 @@ ipdb = "*"
 pytest = "*"
 
 [packages]
+python-xlib = "*"
 
 [requires]
 python_version = "3.9"
