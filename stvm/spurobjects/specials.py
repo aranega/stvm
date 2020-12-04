@@ -79,6 +79,7 @@ class Context(VariableSizedW):
             context.previous = self[0]
         else:
             context._previous = self[0]
+        context.stcontext = self
         self.vm_context = context
         return context
 
