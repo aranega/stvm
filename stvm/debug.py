@@ -34,6 +34,14 @@ class STVMDebugger(Cmd):
     #             # self.do_list("")
     #             ...
 
+    def do_untilswith(self, arg):
+        process = self.vm.active_process
+        while process is self.vm.active_process:
+            self.vm.decode_execute(self.vm.fetch())
+        self.do_stack("")
+        self.do_list("")
+        print(f"<*> Process {self.vm.active_process.display()}")
+
     def do_step(self, arg):
         self.vm.decode_execute(self.vm.fetch())
         self.do_stack("")
@@ -78,11 +86,13 @@ class STVMDebugger(Cmd):
 
     def do_next(self, arg):
         context = self.vm.current_context
+        past_ctx = []
+        while context:
+            past_ctx.append(context)
+            context = context.sender
         while "not same context":
             self.vm.decode_execute(self.vm.fetch())
-            if self.vm.current_context is context:
-                break
-            if self.vm.current_context is context.sender:
+            if self.vm.current_context in past_ctx:
                 break
         self.do_stack("")
         self.do_list("")
@@ -94,12 +104,13 @@ class STVMDebugger(Cmd):
         self.do_list("")
         import ipdb; ipdb.set_trace()
 
-
     def do_list(self, arg):
         context = self.vm.current_context.adapt_context()
+        return self.print_cm(context, arg)
+
+    def print_cm(self, context, arg):
         cm = context.compiled_method
         bc_start = cm.initial_pc
-
         receiver_class = context.receiver.class_.name
         selector = cm.selector.as_text()
         print(f"{colors.fg.purple}{receiver_class}>>#{selector}{colors.reset}")
@@ -165,7 +176,7 @@ class STVMDebugger(Cmd):
         self.print_context(context, arg)
 
     def print_context(self, context, arg):
-        print("Current context")
+        print(f"Context {context.display()}")
         print("method  ", context.compiled_method.selector.as_text())
         if context.closure is None:
             print("closure   nil")
@@ -227,6 +238,9 @@ class STVMDebugger(Cmd):
         print("object type", receiver.__class__.__name__, "kind", receiver.kind)
         print("class", receiver.class_.name)
         if receiver.kind in (-1, -3):
+            return
+        if receiver.kind in range(24, 32):
+            print("selector", receiver.selector.as_text())
             return
         print("slots")
         if receiver.kind in range(9, 24):

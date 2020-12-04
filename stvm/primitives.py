@@ -42,7 +42,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except PrimitiveFail as e:
         raise e
     except Exception as e:
-        if number in (117,):
+        if number in (117, ):
             raise e
         raise PrimitiveFail
 
@@ -320,8 +320,7 @@ def perform(rcvr, selector, *args, context, vm):
 
 @primitive(85)
 def signal(semaphore, context, vm):
-    # vm.synchronous_signal(semaphore)
-    ...
+    vm.synchronous_signal(semaphore)
 
 
 @primitive(86)
@@ -330,17 +329,33 @@ def wait(semaphore, context, vm):
 
 
 @primitive(87)
-def resume(semaphore, context, vm):
-    import ipdb; ipdb.set_trace()
-
-    # vm.wait(semaphore)
+def resume(process, context, vm):
+    vm.resume(process)
 
 
 @primitive(88)
-def suspend(semaphore, context, vm):
-    import ipdb; ipdb.set_trace()
+def suspend(process, context, vm):
+    if process is not vm.active_process:
+        raise PrimitiveFail("not the active process")
+    context.push(vm.memory.nil)
+    vm.suspend_active()
 
-    # vm.wait(semaphore)
+#
+# @primitive(91)
+# def
+
+
+@primitive(106)
+def screen_size(rcvr, context, vm):
+    from Xlib.display import Display
+    display = Display()
+    geometry = display.screen().root.get_geometry()
+    width = geometry.width
+    height = geometry.height
+    point = vm.allocate(vm.memory.point)
+    point.slots[0] = integer.create(width, vm.memory)
+    point.slots[1] = integer.create(height, vm.memory)
+    return point
 
 
 @primitive(110)
@@ -363,9 +378,12 @@ def quitPrimitive(rcvr, colargeintntext, vm):
 def external_call(*args, context, vm):
     method = context.compiled_method
     pragma = method.literals[0]
-    plugin = pragma[0].as_text()
+    try:
+        module = pragma[0].as_text()
+    except Exception:
+        module = "default"
     call = pragma[1].as_text()
-    plugin_module = importlib.import_module(f'stvm.plugins.{plugin}')
+    plugin_module = importlib.import_module(f'stvm.plugins.{module}')
     plugin_function = getattr(plugin_module, call)
     return plugin_function(*args, context, vm)
 
@@ -431,6 +449,11 @@ def closure_value(closure, *args, context, vm):
 
     new_context.previous = context.previous
     return new_context
+
+
+@primitive(210)
+def context_at(ctx, at, context, vm):
+    return ctx.slots[at.value]
 
 
 @primitive(211)
