@@ -23,6 +23,7 @@ class SpurMemoryHandler(object):
         "bytestring": 6,
         "array": 7,
         "context_class": 10,
+        "point": 12,
         "largepositiveint": 13,
         "semaphore": 18,
         "character": 19,

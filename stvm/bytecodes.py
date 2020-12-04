@@ -285,9 +285,10 @@ class ReturnTop(object):
 
 @bytecode(125)
 class BlockReturn(object):
+
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.previous
+        ctx = context.closure.outer_context.adapt_context()
         ctx.push(context.pop())
         vm.activate_context(ctx)
 
@@ -301,6 +302,50 @@ class BlockReturn(object):
             to = context.previous
             to = f"to={to.display()}"
         return f"block return {top} {to}"
+
+
+@bytecode(128)
+class PushOperationLongForm(object):
+    display_jump = 2
+
+    @classmethod
+    def execute(cls, bytecode, context, vm):
+        cm = context.compiled_method
+        target_encoded = cm.raw_data[context.pc + 1]
+        target = (target_encoded & 0xC0) >> 6
+        index = target_encoded & 0x3F
+
+        if target == 3:  # from literal variable
+            association = cm.literals[index]
+            context.push(association.slots[1])
+        elif target == 2:
+            print('Cover me!')
+            import ipdb; ipdb.set_trace()
+        elif target == 1:  # temporary location
+            context.push(context.stack[index])
+        else:  # receiver variable
+            context.push(context.receiver.slots[index])
+        context.pc += 2
+
+    @classmethod
+    def display(cls, bytecode, context, vm, position=None, active=False):
+        label = "push"
+        cm = context.compiled_method
+        target_encoded = cm.raw_data[position + 1]
+        target = (target_encoded & 0xC0) >> 6
+        index = target_encoded & 0x3F
+        if target == 3:
+            label += f"FromLit {index}"
+        elif target == 2:
+            label += f"Coverme {index}"
+        elif target == 1:
+            label += f"FromTemp {index}"
+        else:
+            label += f"FromRcvrVar {index}"
+        if active:
+            top = context.peek()
+            label += f" val={top.display()}"
+        return f"{label}"
 
 
 @bytecode(range(129, 131))
@@ -584,12 +629,32 @@ class CallPrimitive(object):
         try:
             pc = context.pc
             primitive = cm.raw_data[pc + 1: pc + 3].cast("h")[0]
-            nb_params = cm.num_args
-            args = [context.receiver]
-            args.extend(context.stack[:nb_params])
-            context.from_primitive = True
-            result = execute_primitive(primitive, context, vm, *args)
-            return result
+            if primitive == 256:
+                ctx = context.previous
+                ctx.push(context.receiver)
+                vm.activate_context(ctx)
+            elif primitive == 257:
+                ctx = context.previous
+                ctx.push(vm.memory.true)
+                vm.activate_context(ctx)
+            elif primitive == 258:
+                ctx = context.previous
+                ctx.push(vm.memory.false)
+                vm.activate_context(ctx)
+            elif primitive == 259:
+                ctx = context.previous
+                ctx.push(vm.memory.false)
+                vm.activate_context(ctx)
+            elif primitive in range(260, 520):
+                ctx = context.previous
+                ctx.push(integer.create(primitive - 261, vm.memory))
+                vm.activate_context(ctx)
+            else:
+                nb_params = cm.num_args
+                args = [context.receiver]
+                args.extend(context.stack[:nb_params])
+                result = execute_primitive(primitive, context, vm, *args)
+                return result
         except PrimitiveFail:
             context.primitive_success = False
             context.pc += 3
