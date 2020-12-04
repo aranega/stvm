@@ -1,5 +1,6 @@
 import time
 import struct
+from math import ceil
 import importlib
 from .spurobjects import ImmediateInteger as integer
 from .spurobjects import ImmediateFloat
@@ -42,7 +43,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except PrimitiveFail as e:
         raise e
     except Exception as e:
-        if number in (117, ):
+        if number in (117, 121, 71, 105):
             raise e
         raise PrimitiveFail
 
@@ -340,9 +341,18 @@ def suspend(process, context, vm):
     context.push(vm.memory.nil)
     vm.suspend_active()
 
-#
-# @primitive(91)
-# def
+
+@primitive(105)
+def replacefrom_to_with_startingat(self, start, stop, other, start_other, context, vm):
+    start = start.value - 1
+    stop = stop.value
+    start_other = start_other.value - 1
+    for k, i in enumerate(range(start, stop), start=start_other):
+        self.raw_slots[i] = other.raw_slots[k]
+    import ipdb; ipdb.set_trace()
+
+    return self
+
 
 
 @primitive(106)
@@ -388,6 +398,11 @@ def external_call(*args, context, vm):
     return plugin_function(*args, context, vm)
 
 
+@primitive(121)
+def image_name(self, context, vm):
+    return to_bytestring(vm.image.filename, vm)
+
+
 @primitive(125)
 def signal_at_byte_left(self, threasold, context, vm):
     print("""Tell the interpreter the low-space threshold in bytes. When the free
@@ -409,10 +424,19 @@ def clone(self, context, vm):
     return new
 
 
+@primitive(171)
+def immediate_asint(self, context, vm):
+    return self.as_immediate_int()
+
+
 @primitive(175)
 def identity_hash(self, context, vm):
     return integer.create(self.identity_hash, vm.memory)
 
+
+@primitive(176)
+def max_identity_hash(self, context, vm):
+    return integer.create(0x3FFFFF, vm.memory)
 
 @primitive(range(201, 205), activate=True)
 def closure_value(closure, *args, context, vm):
@@ -458,7 +482,7 @@ def context_at(ctx, at, context, vm):
 
 @primitive(211)
 def context_at_put(ctx, at, val, context, vm):
-    ctx.slots[at.value] = val
+    ctx.slots[at.value - 1] = val
     return val
 
 
@@ -546,7 +570,7 @@ def build_largepositiveint(value, vm):
     array_size = (size//(8 + 1)) + 1
     inst = vm.allocate(cls, array_size=array_size)
     byte_array = value.to_bytes(size, byteorder='little')
-    inst.raw_slots = byte_array
+    inst.raw_slots[:] = byte_array
     return inst
 
 
@@ -566,7 +590,7 @@ def large_or_small(r, vm):
         result = vm.allocate(vm.memory.largenegativeint, array_size=length)
     else:
         result = vm.allocate(vm.memory.largepositiveint, array_size=length)
-    result.raw_slots = rb
+    result.raw_slots[:] = rb
     return result
 
 
@@ -579,3 +603,11 @@ def to_int(e):
     if e.class_index == LargeNegativeIntClass:
         return -val
     raise Exception("Unknown problem")
+
+
+def to_bytestring(e, vm):
+    cls = vm.memory.bytestring
+    s = vm.allocate(cls, data_len=len(e))
+    mem = s.raw_slots.cast("B")
+    mem[:len(e)] = bytes(e, encoding="utf-8")
+    return s

@@ -288,7 +288,8 @@ class BlockReturn(object):
 
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.closure.outer_context.adapt_context()
+        # ctx = context.closure.outer_context.adapt_context()
+        ctx = context.previous
         ctx.push(context.pop())
         vm.activate_context(ctx)
 
@@ -318,9 +319,8 @@ class PushOperationLongForm(object):
         if target == 3:  # from literal variable
             association = cm.literals[index]
             context.push(association.slots[1])
-        elif target == 2:
-            print('Cover me!')
-            import ipdb; ipdb.set_trace()
+        elif target == 2:  # literal constant
+            context.push(cm.literals[index])
         elif target == 1:  # temporary location
             context.push(context.stack[index])
         else:  # receiver variable
@@ -330,22 +330,32 @@ class PushOperationLongForm(object):
     @classmethod
     def display(cls, bytecode, context, vm, position=None, active=False):
         label = "push"
+        val = ""
         cm = context.compiled_method
         target_encoded = cm.raw_data[position + 1]
         target = (target_encoded & 0xC0) >> 6
         index = target_encoded & 0x3F
         if target == 3:
             label += f"FromLit {index}"
-        elif target == 2:
-            label += f"Coverme {index}"
-        elif target == 1:
+            if active:
+                val = cm.literals[index][1]
+                val = f"val={val.display()}"
+        elif target == 2:   # literal constant
+            label += f"Constant {index}"
+            if active:
+                val = cm.literals[index]
+                val = f"[{val.display()}]"
+        elif target == 1:   # temporary location
             label += f"FromTemp {index}"
-        else:
+            if active:
+                val = context.stack[index]
+                val = f"val={val.display()}"
+        else:   # receiver variable
             label += f"FromRcvrVar {index}"
-        if active:
-            top = context.peek()
-            label += f" val={top.display()}"
-        return f"{label}"
+            if active:
+                val = cm.receiver[index]
+                val = f"val={val.display()}"
+        return f"{label} {val}"
 
 
 @bytecode(range(129, 131))
@@ -432,7 +442,7 @@ class SingleExtendSend(object):
             rcvr = f"rcvr={rcvr.display()}"
             args = [x.display() for x in context.stack[-nb_args:]]
             args = f"args={', '.join(reversed(args))}"
-        return f"<%> send {selector} {rcvr} {args}"
+        return f"<¹> send {selector} {rcvr} {args}"
 
 
 @bytecode(132)
@@ -545,6 +555,46 @@ class SuperSend(object):
         return f"super {selector} from={superclass.name}"
 
 
+@bytecode(134)
+class SecondExtendSend(object):
+    display_jump = 2
+
+    @staticmethod
+    def execute(byte, context, vm):
+        cm = context.compiled_method
+        frmt = cm.raw_data[context.pc + 1]
+        nb_args = frmt >> 6
+        index = frmt & 0x3F
+        selector = cm.literals[index]
+
+        args = [context.pop() for _ in range(nb_args)]
+        args.reverse()
+        receiver = context.pop()
+
+        compiled_method = vm.lookup(receiver.class_, selector)
+        new_context = context.__class__(receiver, compiled_method, vm.memory)
+        new_context.stack[:nb_args] = args
+        context.pc += 2
+        new_context.previous = context
+        vm.current_context = new_context
+
+    @staticmethod
+    def display(bytecode, context, vm, position=None, active=False):
+        cm = context.compiled_method
+        frmt = cm.raw_data[position + 1]
+        nb_args = frmt >> 6
+        index = frmt & 0x3F
+        selector = cm.literals[index].as_text()
+        rcvr = args = ""
+        if active:
+            rcvr = context.stack[-nb_args-1]
+            rcvr = f"rcvr={rcvr.display()}"
+            if nb_args:
+                args = [x.display() for x in context.stack[-nb_args:]]
+                args = f"args={', '.join(reversed(args))}"
+        return f"<²> send {selector} {rcvr} {args}"
+
+
 @bytecode(135)
 class PopStackTop(object):
     @staticmethod
@@ -645,9 +695,15 @@ class CallPrimitive(object):
                 ctx = context.previous
                 ctx.push(vm.memory.false)
                 vm.activate_context(ctx)
-            elif primitive in range(260, 520):
+            elif primitive in range(260, 264):
+                v = primitive - 261
                 ctx = context.previous
-                ctx.push(integer.create(primitive - 261, vm.memory))
+                ctx.push(integer.create(v, vm.memory))
+                vm.activate_context(ctx)
+            elif primitive in range(264, 519):
+                index = primitive - 264
+                ctx = context.previous
+                ctx.push(context.receiver[index])
                 vm.activate_context(ctx)
             else:
                 nb_params = cm.num_args

@@ -207,13 +207,17 @@ class STVMDebugger(Cmd):
             print()
             s = s.sender
 
+    def do_method(self, arg):
+        cm = self.vm.current_context.compiled_method
+        self.navigate(cm, arg)
+
     def navigate(self, receiver, arg):
         args = [a for a in arg.strip().split(" ") if a]
         while args:
             if receiver.kind in range(9, 24):
                 print(f"{colors.fg.red}Cannot navigate slots of Indexable objects{colors.reset}")
                 break
-            if receiver.kind in (-1, -3):
+            if receiver.kind < 0:
                 print(f"{colors.fg.red}Cannot navigate slots of Immediate {colors.reset}")
                 break
             if args[0] == "slot":
@@ -231,16 +235,24 @@ class STVMDebugger(Cmd):
             elif args[0] == 'class':
                 receiver = receiver.class_
                 args = args[1:]
+            elif args[0] == "literal":
+                number = args[1]
+                receiver = receiver.literals[int(number)]
+                args = args[2:]
+
         self.print_object(receiver)
 
     def print_object(self, receiver):
-        print("receiver", receiver.display())
+        print("object", receiver.display())
         print("object type", receiver.__class__.__name__, "kind", receiver.kind)
         print("class", receiver.class_.name)
-        if receiver.kind in (-1, -3):
+        if receiver.kind < 0:
             return
         if receiver.kind in range(24, 32):
             print("selector", receiver.selector.as_text())
+            print("literals")
+            for i, e in enumerate(receiver.literals):
+                print(f"{i:3}   {e.display()}")
             return
         print("slots")
         if receiver.kind in range(9, 24):
@@ -269,6 +281,11 @@ class STVMDebugger(Cmd):
         elif arg == "context":
             self.do_print_context("")
 
+    def do_object(self, arg):
+        args = [a for a in arg.strip().split(" ") if a]
+        address = int(args[0], 0)
+        obj = self.vm.memory.object_at(address)
+        self.navigate(obj, " ".join(args[1:]))
 
     def do_where(self, arg):
         context = self.vm.current_context

@@ -15,7 +15,7 @@ class ImmediateInteger(SpurObject):
 
     @classmethod
     def create(cls, i, memory):
-        addr = struct.unpack("Q", struct.pack("q", ((i << 3)) | 0x01 ))
+        addr = struct.unpack("Q", struct.pack("q", ((i << 3)) | 0b001 ))
         addr = addr[0]
         return memory.object_at(addr)
 
@@ -67,6 +67,9 @@ class ImmediateInteger(SpurObject):
     def as_float(self):
         return float(self.value)
 
+    def as_immediate_int(self):
+        return self
+
 
 class ImmediateFloat(SpurObject):
     class_ = None
@@ -74,7 +77,7 @@ class ImmediateFloat(SpurObject):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.kind = -3
+        self.kind = -4
 
     @staticmethod
     def ror(n, rotations, width):
@@ -99,7 +102,7 @@ class ImmediateFloat(SpurObject):
         addr = cls.rol(addr, 1, 64)
         if addr > 1:
             addr = addr - 0x7000000000000000
-        addr = (addr << 3) | 0x4
+        addr = (addr << 3) | 0b100
         return memory.object_at(addr)
 
     def __getitem__(self, index):
@@ -117,5 +120,64 @@ class ImmediateFloat(SpurObject):
     def as_float(self):
         return self.value
 
+    def as_immediate_int(self):
+        return ImmediateInteger.create(ord(self.value), self.memory)
+
+
     def display(self):
         return str(self.value)
+
+
+class ImmediateChar(SpurObject):
+    class_ = None
+    number_of_slots = 0
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kind = -2
+
+    def update(self, new_address):
+        self.value = chr(new_address >> 3)
+        self.class_ = self.memory.character
+
+    @classmethod
+    def create(cls, i, memory):
+        addr = struct.unpack("Q", struct.pack("Q", (ord(i) << 3) | 0b010))
+        addr = addr[0]
+        return memory.object_at(addr)
+
+    def __getitem__(self, index):
+        raise TypeError(f"{self.__class__.__name__} don't have slots")
+
+    def __repr__(self):
+        return f"{super().__repr__()}({self.value})"
+
+    def __eq__(self, other):
+        return self.value == str(other)
+
+    def __hash__(self):
+        return hash(self.address)
+
+    def __le__(self, other):
+        return self.value <= str(other)
+
+    def __lt__(self, other):
+        return self.value < str(other)
+
+    def __gt__(self, other):
+        return self.value > str(other)
+
+    def __ge__(self, other):
+        return self.value >= str(other)
+
+    def __and__(self, other):
+        return self.value & str(other)
+
+    def __or__(self, other):
+        return self.value | str(other)
+
+    def as_immediate_int(self):
+        return ImmediateInteger.create(ord(self.value), self.memory)
+
+    def display(self):
+        return f"${self.value}"

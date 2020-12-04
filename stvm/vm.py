@@ -1,5 +1,6 @@
 import struct
 import time
+from math import ceil
 from .image64 import Image
 from .spurobjects.objects import *
 from .spurobjects import ImmediateInteger as integer
@@ -180,8 +181,8 @@ class VM(object):
         import ipdb; ipdb.set_trace()
         return self.lookup(original_class, self.memory.dnuSelector)
 
-    def allocate(self, stclass, array_size=0):
-        return self.allocator.allocate(stclass, array_size)
+    def allocate(self, stclass, array_size=0, data_len=0):
+        return self.allocator.allocate(stclass, array_size, data_len)
 
 
 class MemoryAllocator(object):
@@ -190,31 +191,51 @@ class MemoryAllocator(object):
         self.start = 1 << 3
         self.current = self.start
 
-    def allocate(self, stclass, array_size=0):
+    def allocate(self, stclass, array_size=0, data_len=0):
         addr = self.current
-        header = self.create_header(stclass, array_size)
+        header, nb_slots = self.create_header(stclass, array_size, data_len)
+        if nb_slots >= 255:
+            self.memory[addr - 8:addr] = struct.pack("Q", nb_slots)
         self.memory[addr:addr + 8] = header
         # set all the mem to nil first
-        nb_slots = stclass.inst_size + array_size
-        nil = self.memory.nil
-        slot_start = addr + 8
-        for i in range(0, nb_slots * 8, 8):
-            slot = self.memory[slot_start + i:slot_start + i + 8].cast("Q")
-            slot[0] = nil.address
+        self.init_rawslots(self.memory, addr, nb_slots)
         instance = self.memory.object_at(addr)
+        if instance.kind in range(9, 24):
+            self.init_zero(instance)
         self.current = instance.next_object.end_address + 8
         return instance
 
+    @staticmethod
+    def init_rawslots(memory, addr, nb_slots):
+        nil = memory.nil
+        slot_start = addr + 8
+        for i in range(0, nb_slots * 8, 8):
+            slot = memory[slot_start + i:slot_start + i + 8].cast("Q")
+            slot[0] = nil.address
 
-    def create_header(self, stclass, array_size=0):
-        nb_slots = stclass.inst_size + array_size
+    @staticmethod
+    def init_zero(instance):
+        memory = instance.memory
+        nb_values = len(instance.raw_slots)
+        instance.raw_slots[:] = b'\x00' * nb_values
+
+    def create_header(self, stclass, array_size=0, data_len=0):
         format = stclass.inst_format
+        if format in range(9, 24) and data_len == 0:
+            data_len = array_size
+        if data_len:
+            bits = Indexable._bits[format - 9]
+            array_size = ceil(data_len / bits)
+            data_per_row = 64 // bits
+            format += data_per_row - (data_len % bits)
+        total_slots = stclass.inst_size + array_size
+        slots = total_slots if total_slots < 255 else 255
         sub1, sub2 = 0, 0
-        sub2 = (nb_slots << 24)
+        sub2 = (slots << 24)
         sub1 = ((format & 0x1F)  << 24)
         sub1 = sub1 | stclass.identity_hash  # class index
         header = struct.pack("Q", (sub2 << 32) | sub1)
-        return header
+        return (header, slots)
 
 
 class VMContext(object):

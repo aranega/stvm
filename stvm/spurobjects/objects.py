@@ -73,7 +73,8 @@ class SpurObject(object):
         header = self.memory[address:address + 8]
         _, nb_slots, cls_index = self.decode_basicinfo(header)
         if nb_slots > 254:
-            nb_slots = mem[address - 8 : address - 4].cast("I")[0]
+            nb_slots = mem[address-8:address].cast("I")[0]
+
         self.number_of_slots = nb_slots
         self.class_index = cls_index
         self.raw_object = mem[address:address + self.header_size + (nb_slots * 8)]
@@ -93,7 +94,6 @@ class SpurObject(object):
     @classmethod
     def find_spurClass(cls, obj_format, cls_index):
         return cls.special_subclasses.get((obj_format, cls_index), cls.spur_implems[obj_format])
-
 
     @classmethod
     def create(cls, address, memory, class_table=False):
@@ -227,7 +227,6 @@ class Indexable(SpurObject):
         row = (index % nbbits) * offset
         return int.from_bytes(self.raw_slots[line + row: line + row + offset], byteorder="little")
 
-
     def __getitem__(self, index):
         return integer.create(self.raw_at(index), self.memory)
 
@@ -239,7 +238,6 @@ class Indexable(SpurObject):
         return nbbytes * 8 // self.nb_bits
 
     def as_text(self):
-        # return "".join(chr(i) for i in self)
         raw_at = self.raw_at
         return "".join(chr(raw_at(i)) for i in range(len(self)))
 
@@ -259,6 +257,14 @@ class Indexable(SpurObject):
 
     def __repr__(self):
         return f"{super().__repr__()}({self.as_text()})"
+
+    def display(self):
+        try:
+            txt = f'"{self.as_text()}"'
+        except Exception:
+            txt = ""
+        r = super().display()[:-1]
+        return f'{r} {txt}>'
 
 
 @spurobject(range(24, 32))

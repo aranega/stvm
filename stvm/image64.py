@@ -1,6 +1,6 @@
 import mmap
 import struct
-from .spurobjects import SpurObject, ImmediateInteger, ImmediateFloat
+from .spurobjects import SpurObject, ImmediateInteger, ImmediateFloat, ImmediateChar
 
 
 class ByteChunk(object):
@@ -63,7 +63,7 @@ class SpurMemoryHandler(object):
         elif address_kind == 1:
             obj = ImmediateInteger(address, self.memory)
         elif address_kind == 2:
-            import ipdb; ipdb.set_trace()
+            obj = ImmediateChar(address, self.memory)
         elif address_kind == 3:
             import ipdb; ipdb.set_trace()
         elif address_kind == 4:
