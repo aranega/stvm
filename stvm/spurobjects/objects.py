@@ -73,7 +73,7 @@ class SpurObject(object):
         header = self.memory[address:address + 8]
         _, nb_slots, cls_index = self.decode_basicinfo(header)
         if nb_slots > 254:
-            nb_slots = mem[address-8:address].cast("I")[0]
+            nb_slots = mem[address-8:address-4].cast("I")[0]
 
         self.number_of_slots = nb_slots
         self.class_index = cls_index
@@ -221,11 +221,17 @@ class Indexable(SpurObject):
         self.nb_empty_cases = self._shift[shift]
 
     def raw_at(self, index):
+        return int.from_bytes(self.raw_bytes_at(index), byteorder="little")
+
+    def effective_slice(self, index):
         nbbits = self.nb_bits
         line = (index // nbbits) * nbbits
         offset = 8 // (64 // nbbits)
         row = (index % nbbits) * offset
-        return int.from_bytes(self.raw_slots[line + row: line + row + offset], byteorder="little")
+        return slice(line + row, line + row + offset)
+
+    def raw_bytes_at(self, index):
+        return self.raw_slots[self.effective_slice(index)]
 
     def __getitem__(self, index):
         return integer.create(self.raw_at(index), self.memory)
@@ -236,6 +242,14 @@ class Indexable(SpurObject):
     def __len__(self):
         nbbytes = len(self.raw_slots) - self.nb_empty_cases
         return nbbytes * 8 // self.nb_bits
+
+    def __setitem__(self, index, value):
+        t = type(value)
+        if t is int:
+            value = int.to_bytes(value, length=self.nb_bits // 8, byteorder="little")
+        elif t is integer:
+            value = int.to_bytes(value.value, length=self.nb_bits // 8, byteorder="little")
+        self.raw_slots[self.effective_slice(index)] = value
 
     def as_text(self):
         raw_at = self.raw_at

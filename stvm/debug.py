@@ -1,3 +1,4 @@
+import datetime
 from cmd import Cmd
 from pprint import pprint
 from .vm import VM
@@ -17,7 +18,8 @@ class STVMDebugger(Cmd):
     def __init__(self, vm, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.intro = 'Experimental SmalltalkVM debugger\n'
-        self.intro += f'Loaded image: {vm.image.filename}\n'
+        self.intro += f'Loaded image: {vm.image.file.name}\n'
+        self.intro += f'Directory: {vm.image.file.parent}\n'
         self.intro += f'Image VM version: {vm.image.image_version}\n'
         self.intro += f'Fetching active context: "{vm.current_context.compiled_method.selector.as_text()}"\n'
         self.prompt = '? > '
@@ -63,16 +65,30 @@ class STVMDebugger(Cmd):
         self.do_stack("")
         self.do_list("")
 
+    def do_time(self, arg):
+        arg = arg or 1
+        s = float(arg)
+        end = datetime.datetime.now() + datetime.timedelta(seconds=s)
+        count = 0
+        while end > datetime.datetime.now():
+            count += 1
+            self.vm.decode_execute(self.vm.fetch())
+
+        purple = colors.fg.purple
+        yellow = colors.fg.yellow
+        reset = colors.reset
+        grey = colors.fg.darkgrey
+        print(f"{purple}{count}{yellow} bytecodes executed in {grey}{s}s{reset}")
 
     def do_continue(self, arg):
+        limit = 100000 if not arg else int(arg)
         try:
             count = 0
-            import datetime
             a = datetime.datetime.now()
             while True:
                 self.vm.decode_execute(self.vm.fetch())
                 count += 1
-                if count > 50000:
+                if count > limit:
                     b = datetime.datetime.now()
                     raise StopIteration(f"Looping too long {b-a}")
         except Exception as e:
@@ -176,18 +192,21 @@ class STVMDebugger(Cmd):
         self.print_context(context, arg)
 
     def print_context(self, context, arg):
-        print(f"Context {context.display()}")
+        print(f"Context  {context.display()}")
+        if context.stcontext:
+            print(f"allocated context {context.stcontext.display()}")
+        print(f"home     {context.home.display()}")
         print("method  ", context.compiled_method.selector.as_text())
         if context.closure is None:
             print("closure   nil")
         else:
-            print("closure", context.closure.display())
+            print("closure ", context.closure.display())
         print("sender  ", context.sender.display())
         print("receiver", context.receiver.display())
-        print("stack:   [", *[s.display() for s in context.stack], ']')
-        print("args:    [", *[s.display() for s in context.args], ']')
-        print("temps:   [", *[s.display() for s in context.temps], ']')
-        print("PC", context.pc)
+        print("stack    [", *[s.display() for s in context.stack], ']')
+        print("args     [", *[s.display() for s in context.args], ']')
+        print("temps    [", *[s.display() for s in context.temps], ']')
+        print("pc       ", context.pc)
 
     def do_active_process(self, arg):
         process = self.vm.active_process

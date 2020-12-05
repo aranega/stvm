@@ -1,5 +1,6 @@
 import mmap
 import struct
+from pathlib import Path
 from .spurobjects import SpurObject, ImmediateInteger, ImmediateFloat, ImmediateChar
 
 
@@ -37,6 +38,7 @@ class SpurMemoryHandler(object):
     def __init__(self, memory):
         self.memory = memory
         self.cache = {}
+        self.integers = []
 
     def init_const(self):
         for name, pos in self.special_array.items():
@@ -47,8 +49,9 @@ class SpurMemoryHandler(object):
 
     def init_smallints(self):
         for i in range(-255, 255):
-            imm = ImmediateInteger.create(i, self.memory)
+            imm = ImmediateInteger.create(i, self.memory, init=True)
             self.cache[imm.address] = imm
+            self.integers.append(imm)
 
     @property
     def special_object_array(self):
@@ -113,6 +116,10 @@ class VMMemory(object):
     def cache(self):
         return self.handler.cache
 
+    @property
+    def integers(self):
+        return self.handler.integers
+
     def object_at(self, address):
         return self.handler.object_at(address)
 
@@ -134,7 +141,7 @@ class Image(object):
     first_seg_size = ByteChunk(size=8, after=second_unknown_short)
 
     def __init__(self, filename, load=True):
-        self.filename = filename
+        self.file = Path(filename).resolve()
         self.map = None
         self.header = None
         self.object_space = None
@@ -143,7 +150,7 @@ class Image(object):
             self.load()
 
     def load(self):
-        with open(self.filename, mode="br") as f:
+        with open(self.file, mode="br") as f:
             memory = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
             self.map = memoryview(memory)
             self.header = self.map[:80]
@@ -158,20 +165,3 @@ class Image(object):
 
     def as_memory(self):
         return VMMemory(self)
-
-
-if __name__ == "__main__":
-    i = Image('Pharo8.0.image')
-    mem = i.as_memory()
-    e = mem.smallinteger
-    # print(mem.object_at(e[1].array[3]))
-    print(e[1].class_.inst_size)
-    m = e[1][1][3]
-    print(e[1].array_at(3))
-    print(m[1])
-
-    e = mem.special_object_array
-    for _ in range(7278):
-        e = e.next_object
-
-    print(e)

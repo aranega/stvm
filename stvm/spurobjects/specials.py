@@ -3,6 +3,7 @@ from .immediate import ImmediateInteger as integer
 
 CONTEXT_CLASS = 36
 CLOSURE_CLASS = 37
+FULLCLOSURE_CLASS = 38
 SEMAPHORE_CLASS = 48
 
 
@@ -95,6 +96,10 @@ class Context(VariableSizedW):
     def peek(self):
         return self.adapt_context().peek()
 
+    @property
+    def home(self):
+        return self.adapt_context().home
+
 
 @spurobject(3, class_index=CLOSURE_CLASS)
 class BlockClosure(VariableSizedW):
@@ -113,6 +118,10 @@ class BlockClosure(VariableSizedW):
     @property
     def copied(self):
         return self[3:]
+
+    @property
+    def home(self):
+        return self.outer_context.home
 
 
 # @spurobject(1, class_index=SEMAPHORE_CLASS)

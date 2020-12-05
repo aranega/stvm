@@ -1,5 +1,5 @@
-from math import ceil
 from ..spurobjects import ImmediateInteger as integer
+from ..utils import *
 
 
 LargeNegativeIntClass = 32
@@ -62,23 +62,12 @@ def large_or_small(value, vm):
 
 
 def large(r, neg, vm):
-    length = ceil((len(hex(r)) - 2) / 2)
+    length = len(hex(r)) - 2
     if neg:
         r = -r
-        result = vm.allocate(vm.memory.largenegativeint, array_size=length)
+        result = vm.allocate(vm.memory.largenegativeint, data_len=length)
     else:
-        result = vm.allocate(vm.memory.largepositiveint, array_size=length)
+        result = vm.allocate(vm.memory.largepositiveint, data_len=length)
     rb = int.to_bytes(r, byteorder="little", length=length)
-    result.raw_slots = rb
+    result.raw_slots[:length] = rb
     return result
-
-
-def to_int(e):
-    val = int(e)
-    if e.kind == -1:
-        return val
-    if e.class_index == LargePositiveIntClass:
-        return val
-    if e.class_index == LargeNegativeIntClass:
-        return -val
-    raise Exception("Unknown problem")

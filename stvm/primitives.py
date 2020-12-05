@@ -1,14 +1,9 @@
 import time
 import struct
-from math import ceil
 import importlib
+from .utils import *
 from .spurobjects import ImmediateInteger as integer
 from .spurobjects import ImmediateFloat
-
-LargeNegativeIntClass = 32
-LargePositiveIntClass = 33
-SMALLINT_MAX = 1152921504606846975
-SMALLINT_MIN = -1152921504606846976
 
 
 nil = object()
@@ -45,27 +40,8 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except Exception as e:
         if number in (117, 121, 71, 105):
             raise e
+        raise e
         raise PrimitiveFail
-
-
-def st2python(obj, memory):
-    if obj is memory.true:
-        return True
-    elif obj is memory.false:
-        return False
-    elif obj is memory.nil:
-        return None
-    return obj
-
-
-def python2st(obj, memory):
-    if obj is True:
-        return memory.true
-    if obj is False:
-        return memory.false
-    if obj is nil:
-        return memory.nil
-    return obj
 
 
 def primitive(numbers, activate=False):
@@ -348,9 +324,7 @@ def replacefrom_to_with_startingat(self, start, stop, other, start_other, contex
     stop = stop.value
     start_other = start_other.value - 1
     for k, i in enumerate(range(start, stop), start=start_other):
-        self.raw_slots[i] = other.raw_slots[k]
-    import ipdb; ipdb.set_trace()
-
+        self[i] = other[k]
     return self
 
 
@@ -400,7 +374,7 @@ def external_call(*args, context, vm):
 
 @primitive(121)
 def image_name(self, context, vm):
-    return to_bytestring(vm.image.filename, vm)
+    return to_bytestring(str(vm.image.file), vm)
 
 
 @primitive(125)
@@ -413,6 +387,12 @@ def signal_at_byte_left(self, threasold, context, vm):
 @primitive(129)
 def special_object_oop(self, context, vm):
     return vm.memory.special_object_array
+
+
+@primitive(142)
+def vm_paths(self, context, vm):
+    import os
+    return to_bytestring(os.getcwd() + "/", vm)
 
 
 @primitive(148)
@@ -534,6 +514,11 @@ def lessEqFloat(a, b, context, vm):
     return a.value <= b.value
 
 
+@primitive(546)
+def greaterEqFloat(a, b, context, vm):
+    return a.value >= b.value
+
+
 @primitive(547)
 def eqFloat(a, b, context, vm):
     try:
@@ -564,16 +549,6 @@ def divFloat(a, b, context, vm):
     return a.__class__.create(a.value / b.value, vm.memory)
 
 
-def build_largepositiveint(value, vm):
-    cls = vm.memory.largepositiveint
-    size = (value.bit_length() + 7) // 8
-    array_size = (size//(8 + 1)) + 1
-    inst = vm.allocate(cls, array_size=array_size)
-    byte_array = value.to_bytes(size, byteorder='little')
-    inst.raw_slots[:] = byte_array
-    return inst
-
-
 def smallint(r, vm):
     try:
         return integer.create(r, vm.memory)
@@ -581,33 +556,21 @@ def smallint(r, vm):
         raise PrimitiveFail("out of range")
 
 
-def large_or_small(r, vm):
-    if SMALLINT_MIN <= r <= SMALLINT_MAX:
-        return integer.create(r, vm.memory)
-    length = ceil((len(hex(r)) - 2) / 2)
-    rb = int.to_bytes(r, byteorder="little", length=length)
-    if r < 0:
-        result = vm.allocate(vm.memory.largenegativeint, array_size=length)
-    else:
-        result = vm.allocate(vm.memory.largepositiveint, array_size=length)
-    result.raw_slots[:] = rb
-    return result
+def st2python(obj, memory):
+    if obj is memory.true:
+        return True
+    elif obj is memory.false:
+        return False
+    elif obj is memory.nil:
+        return None
+    return obj
 
 
-def to_int(e):
-    val = int(e)
-    if e.kind == -1:
-        return val
-    if e.class_index == LargePositiveIntClass:
-        return val
-    if e.class_index == LargeNegativeIntClass:
-        return -val
-    raise Exception("Unknown problem")
-
-
-def to_bytestring(e, vm):
-    cls = vm.memory.bytestring
-    s = vm.allocate(cls, data_len=len(e))
-    mem = s.raw_slots.cast("B")
-    mem[:len(e)] = bytes(e, encoding="utf-8")
-    return s
+def python2st(obj, memory):
+    if obj is True:
+        return memory.true
+    if obj is False:
+        return memory.false
+    if obj is nil:
+        return memory.nil
+    return obj

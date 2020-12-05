@@ -213,7 +213,7 @@ class PushInt(object):
 class ReturnReceiver(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.previous
+        ctx = context.home.previous
         ctx.push(context.receiver)
         vm.activate_context(ctx)
 
@@ -228,7 +228,7 @@ class ReturnReceiver(object):
 class ReturnTrue(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.previous
+        ctx = context.home.previous
         ctx.push(vm.memory.true)
         vm.activate_context(ctx)
 
@@ -241,7 +241,7 @@ class ReturnTrue(object):
 class ReturnFalse(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.previous
+        ctx = context.home.previous
         ctx.push(vm.memory.false)
         vm.activate_context(ctx)
 
@@ -254,7 +254,7 @@ class ReturnFalse(object):
 class ReturnNil(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        ctx = context.previous
+        ctx = context.home.previous
         ctx.push(vm.memory.nil)
         vm.activate_context(ctx)
 
@@ -267,10 +267,9 @@ class ReturnNil(object):
 class ReturnTop(object):
     @staticmethod
     def execute(bytecode, context, vm):
-        if context.closure:
-            ctx = context.closure.outer_context.sender.adapt_context()
-        else:
-            ctx = context.previous
+        # import ipdb; ipdb.set_trace()
+        # print(context.display(), context.home.display())
+        ctx = context.home.previous
         ctx.push(context.pop())
         vm.activate_context(ctx)
 
@@ -288,7 +287,6 @@ class BlockReturn(object):
 
     @staticmethod
     def execute(bytecode, context, vm):
-        # ctx = context.closure.outer_context.adapt_context()
         ctx = context.previous
         ctx.push(context.pop())
         vm.activate_context(ctx)
@@ -790,7 +788,7 @@ class PushClosure(object):
         num_copied = (info & 0xF0) >> 4
         num_args = info & 0x0F
         size = int.from_bytes(cm.raw_data[position + 2: position + 4], byteorder="big")
-        return f"closureCopy from={position + 4} to={position + size + 3} num_args={num_args} copied={num_copied}"
+        return f"closure from={position + 4} to={position + size + 3} num_args={num_args} copied={num_copied}"
 
 
 @bytecode(range(144, 152))

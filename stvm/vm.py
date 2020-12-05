@@ -26,6 +26,8 @@ class VM(object):
         self.current_context = self.initial_context()
         self.current_context.pc += 1
         self.nextWakeupUsecs = 0
+        self.method_cache = {}
+        self.opened_files = {}
 
     def add_last_link_list(self, link, linkedlist):
         if self.is_empty_list(linkedlist):
@@ -168,13 +170,19 @@ class VM(object):
         self.current_context = context
 
     def lookup(self, cls, selector):
+        cple = (cls, selector)
+        if cple in self.method_cache:
+            return self.method_cache[cple]
         nil = self.memory.nil
         original_class = cls
         while cls != nil:
             method_dict = cls[1]
             try:
                 index = method_dict.array.index(selector)
-                return method_dict.instvars[1][index]
+                method = method_dict.instvars[1][index]
+                self.method_cache[cple] = method
+                self.method_cache[(cls, selector)] = method
+                return method
             except ValueError:
                 # deal with super classes
                 cls = cls[0]
@@ -195,7 +203,8 @@ class MemoryAllocator(object):
         addr = self.current
         header, nb_slots = self.create_header(stclass, array_size, data_len)
         if nb_slots >= 255:
-            self.memory[addr - 8:addr] = struct.pack("Q", nb_slots)
+            addr = addr + 8
+            self.memory[addr-8:addr-4] = struct.pack("I", nb_slots)
         self.memory[addr:addr + 8] = header
         # set all the mem to nil first
         self.init_rawslots(self.memory, addr, nb_slots)
@@ -227,15 +236,15 @@ class MemoryAllocator(object):
             bits = Indexable._bits[format - 9]
             array_size = ceil(data_len / bits)
             data_per_row = 64 // bits
-            format += data_per_row - (data_len % bits)
+            format += (data_per_row - (data_len % data_per_row)) % data_per_row
         total_slots = stclass.inst_size + array_size
         slots = total_slots if total_slots < 255 else 255
         sub1, sub2 = 0, 0
         sub2 = (slots << 24)
         sub1 = ((format & 0x1F)  << 24)
         sub1 = sub1 | stclass.identity_hash  # class index
-        header = struct.pack("Q", (sub2 << 32) | sub1)
-        return (header, slots)
+        header = struct.pack("<Q", (sub2 << 32) | sub1)
+        return (header, total_slots)
 
 
 class VMContext(object):
@@ -339,6 +348,12 @@ class VMContext(object):
     def peek(self):
         return self.stack[-1]
 
+    @property
+    def home(self):
+        if self.closure is None or self.closure is self.memory.nil:
+            return self
+        return self.closure.home
+
     def display(self):
         cm = self.compiled_method
         return f"<context {hex(id(self))} on {cm.selector.as_text()}>"
@@ -361,43 +376,3 @@ class VMContext(object):
     @property
     def class_(self):
         return self.memory.context_class
-
-
-def print_object(receiver):
-    print("receiver", receiver.display())
-    print("object type", receiver.__class__.__name__, "kind", receiver.kind)
-    print("class", receiver.class_.name)
-    print("slots")
-    if receiver.kind in range(9, 24):
-        for i in range(len(receiver)):
-            if i > 0 and i % 8 == 0:
-                print()
-            print("", hex(receiver[i]), end="")
-        print()
-        print(f'text "{receiver.as_text()}"')
-        return
-    for i in range(len(receiver.slots)):
-        print(f"{i:2}   ", receiver[i].display())
-    if hasattr(receiver, "instvars"):
-        print("instvar in slots")
-        for i in range(len(receiver.instvars)):
-            print(f"{i:2}   ", receiver.instvars[i].display())
-    if hasattr(receiver, "array"):
-        print("array in slots")
-        for i in range(len(receiver.array)):
-            print(f"{i:2}   ", receiver.array[i].display())
-
-
-
-if __name__ == "__main__":
-    vm = VM.new("Pharo8.0.image")
-    from spurobjects import ImmediateFloat
-
-    # for i in range(0, 50):
-    #     e = vm.memory.class_table[i]
-    #     if e is vm.memory.nil:
-    #         continue
-    #     print(i, e.name)
-
-    i = integer.create(45, vm.memory)
-    print(i.kind)

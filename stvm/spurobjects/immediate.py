@@ -14,7 +14,9 @@ class ImmediateInteger(SpurObject):
         self.class_ = self.memory.smallinteger
 
     @classmethod
-    def create(cls, i, memory):
+    def create(cls, i, memory, init=False):
+        if not init and i in range(-255, 255):
+            return memory.integers[i + 255]
         addr = struct.unpack("Q", struct.pack("q", ((i << 3)) | 0b001 ))
         addr = addr[0]
         return memory.object_at(addr)
