@@ -21,7 +21,8 @@ class VM(object):
         self.semaphore_index = -1
         self.params = {
             40: integer.create(8, self.memory),  # word size
-            44: integer.create(6854880, self.memory)  # edenSize
+            44: integer.create(6854880, self.memory),  # edenSize
+            48: integer.create(0, self.memory) # various headers?
         }
         self.current_context = self.initial_context()
         self.current_context.pc += 1

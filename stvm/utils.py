@@ -1,6 +1,7 @@
-from .spurobjects import ImmediateInteger as integer
-from .spurobjects import ImmediateFloat
+import struct
 from math import ceil
+from .spurobjects import ImmediateInteger as integer
+from .spurobjects import ImmediateFloat as smallfloat
 
 LargeNegativeIntClass = 32
 LargePositiveIntClass = 33
@@ -53,3 +54,17 @@ def to_bytestring(e, vm):
 def array(size, vm):
     cls = vm.memory.array
     return vm.allocate(cls, array_size=size)
+
+
+def float_or_boxed(i, vm):
+    value = struct.unpack(">Q", struct.pack(">d", i))[0]
+    exp = (value >> 52) & 0x7FF
+    if 127 <= exp <= 1023:
+        return smallfloat.create(i, vm.memory)
+    cls = vm.memory.boxedfloat64
+    instance = vm.allocate(cls, data_len=2)
+    part0 = value & 0xFFFFFFFF
+    part1 = value >> instance.nb_bits
+    instance[0] = part0
+    instance[1] = part1
+    return instance

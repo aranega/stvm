@@ -37,3 +37,23 @@ def primitiveFindSubstring(cls, key, body, start, match_table, context, vm):
         return integer.create(index + start + 1, vm.memory)
     except Exception:
         return integer.create(0, vm.memory)
+
+
+def primitiveCompareString(cls, s1, s2, order, context, vm):
+    s1 = s1.as_text()
+    s2 = s2.as_text()
+    len1 = len(s1)
+    len2 = len(s2)
+    for i in range(min(len1, len2)):
+        c1 = order.raw_at(ord(s1[i])) + 1
+        c2 = order.raw_at(ord(s2[i])) + 1
+        if c1 != c2:
+            if c1 < c2:
+                return integer.create(1, vm.memory)
+            else:
+                return integer.create(1, vm.memory)
+    if len1 == len2:
+        return integer.create(2, vm.memory)
+    if len1 < len2:
+        return integer.create(1, vm.memory)
+    return integer.create(3, vm.memory)

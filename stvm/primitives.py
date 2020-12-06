@@ -1,9 +1,10 @@
 import time
+import math
 import struct
 import importlib
 from .utils import *
 from .spurobjects import ImmediateInteger as integer
-from .spurobjects import ImmediateFloat
+from .spurobjects import ImmediateFloat as smallfloat
 
 
 nil = object()
@@ -38,8 +39,10 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except PrimitiveFail as e:
         raise e
     except Exception as e:
-        if number in (117, 121, 71, 105):
+        if number in (117, 121, 71, *range(41, 60)):
             raise e
+        if number in (105, *range(1, 16), *range(541, 560)):
+            raise PrimitiveFail
         raise e
         raise PrimitiveFail
 
@@ -105,7 +108,7 @@ def mult(a, b, context, vm):
 def div(a, b, context, vm):
     if a.value % b.value != 0:
         raise PrimitiveFail('not divisible')
-    return smallint(a.value // b.value)
+    return smallint(a.value // b.value, vm)
 
 
 @primitive(11)
@@ -126,6 +129,16 @@ def quo(a, b, context, vm):
 @primitive(14)
 def bitand(a, b, context, vm):
     return smallint(a.value & b.value, vm)
+
+
+@primitive(15)
+def bitor(a, b, context, vm):
+    return smallint(a.value | b.value, vm)
+
+
+@primitive(16)
+def bitxor(a, b, context, vm):
+    return smallint(a.value ^ b.value, vm)
 
 
 @primitive(17)
@@ -233,7 +246,7 @@ primitive(33)(large_divRound)
 
 @primitive(40)
 def smallintAsFloat(self, context, vm):
-    return ImmediateFloat.create(self, vm.memory)
+    return smallfloat.create(self, vm.memory)
 
 
 @primitive(60)
@@ -318,6 +331,38 @@ def suspend(process, context, vm):
     vm.suspend_active()
 
 
+@primitive(101)
+def be_cursor(self, mask_form, context, vm):
+    # mask    cursor_effect
+    # 0		  0		transparent (underlying pixel shows through)
+	# 1		  1		opaque black
+	# 1		  0		opaque white
+	# 0		  1		invert the underlying pixel"
+    shape = self[0]
+    mask = mask_form[0]
+    width = self[1].value
+    height = self[2].value
+    for rshape, rmask in zip(shape, mask):
+        line = ""
+        z = zip(f"{rshape.value:032b}", f"{rmask.value:032b}")
+        for j, (b, m) in enumerate(z):
+            if b == "0" and m == "0":
+                line += " "
+            elif b == "1" and m == "1":
+                line += "#"
+            elif b == "1" and m == "0":
+                line += "O"
+            else:
+                line += "i"
+            # if b == "1":
+            #     line += "#"
+            # else:
+            #     line += "."
+            if j > 0 and j % width == 0:
+                break
+        print(line)
+
+
 @primitive(105)
 def replacefrom_to_with_startingat(self, start, stop, other, start_other, context, vm):
     start = start.value - 1
@@ -326,7 +371,6 @@ def replacefrom_to_with_startingat(self, start, stop, other, start_other, contex
     for k, i in enumerate(range(start, stop), start=start_other):
         self[i] = other[k]
     return self
-
 
 
 @primitive(106)
@@ -490,63 +534,147 @@ def signal_at_microseconds(self, sema, microsecs, context, vm):
 def VMParameter(rcvr, at, *put, context=None, vm=None):
     if put:
         vm.params[at.value] = put[0]
-        return at.__class__.create(0, vm.memory)
+        return at.create(0, vm.memory)
     return vm.params[at.value]
+
+
+@primitive(541)
+def addFloat(a, b, context, vm):
+    return float_or_boxed(a.as_float() + b.as_float(), vm)
+
+primitive(41)(addFloat)
 
 
 @primitive(542)
 def minusFloat(a, b, context, vm):
-    return a.__class__.create(a.value - b.value, vm.memory)
+    return float_or_boxed(a.as_float() - b.as_float(), vm)
+
+primitive(42)(minusFloat)
 
 
 @primitive(543)
 def lessFloat(a, b, context, vm):
-    return a.value < b.value
+    return a.as_float() < b.as_float()
+
+primitive(43)(lessFloat)
 
 
 @primitive(544)
 def greaterFloat(a, b, context, vm):
-    return a.value > b.value
+    return a.as_float() > b.as_float()
+
+primitive(44)(greaterFloat)
 
 
 @primitive(545)
 def lessEqFloat(a, b, context, vm):
-    return a.value <= b.value
+    return a.as_float() <= b.as_float()
+
+primitive(45)(lessEqFloat)
 
 
 @primitive(546)
 def greaterEqFloat(a, b, context, vm):
-    return a.value >= b.value
+    return a.as_float() >= b.as_float()
 
+primitive(46)(greaterEqFloat)
 
 @primitive(547)
 def eqFloat(a, b, context, vm):
-    try:
-        return a.value == b.value
-    except Exception:
-        a = a.as_float()
-        b = b.as_float()
-        return a == b
+    return a.as_float() == b.as_float()
+
+primitive(47)(eqFloat)
+
+
+@primitive(548)
+def neqFloat(a, b, context, vm):
+    return a.as_float() != b.as_float()
+
+primitive(48)(neqFloat)
 
 
 @primitive(549)
 def multFloat(a, b, context, vm):
-    return a.__class__.create(a.value * b.value, vm.memory)
+    return float_or_boxed(a.as_float() * b.as_float(), vm)
+
+primitive(49)(multFloat)
 
 
 @primitive(550)
 def divFloat(a, b, context, vm):
-    return a.__class__.create(a.value / b.value, vm.memory)
+    return float_or_boxed(a.as_float() / b.as_float(), vm)
+
+primitive(50)(divFloat)
 
 
 @primitive(551)
 def truncatedFloat(a, context, vm):
-    return integer.create(int(a.value), vm.memory)
+    return integer.create(int(a.as_float()), vm.memory)
+
+primitive(51)(truncatedFloat)
 
 
 @primitive(552)
-def divFloat(a, b, context, vm):
-    return a.__class__.create(a.value / b.value, vm.memory)
+def factionalPart(a, b, context, vm):
+    return float_or_boxed(a.as_float() % 1, vm)
+
+primitive(52)(factionalPart)
+
+
+@primitive(553)
+def exponent(a, context, vm):
+    addr = a.address
+    exp = (addr >> 56) + 896 - 0x3FE - 1
+    return integer.create(exp, vm)
+
+
+@primitive(53)
+def exponent_boxed(a, context, vm):
+    value = struct.unpack(">Q", struct.pack(">d", a.as_float()))[0]
+    exp = (value >> 52) & 0x7FF
+    return integer.create(exp, vm)
+
+
+@primitive(554)
+def power2(a, b, context, vm):
+    return float_or_boxed(a.as_float() * 2 ** b.as_float(), vm)
+
+primitive(54)(power2)
+
+
+@primitive(555)
+def sqrt(a, context, vm):
+    return float_or_boxed(math.sqrt(a.as_float()), vm)
+
+primitive(55)(sqrt)
+
+
+@primitive(556)
+def sine(a, context, vm):
+    return float_or_boxed(math.sin(a.as_float()), vm)
+
+primitive(56)(sine)
+
+
+@primitive(557)
+def arctan(a, context, vm):
+    return float_or_boxed(math.atan(a.as_float()), vm)
+
+primitive(57)(arctan)
+
+
+@primitive(558)
+def log10(a, context, vm):
+    return float_or_boxed(math.log(a.as_float(), 10), vm)
+
+primitive(58)(log10)
+
+
+@primitive(559)
+def exp(a, context, vm):
+    return float_or_boxed(math.exp(a.as_float()), vm)
+
+primitive(59)(exp)
 
 
 def smallint(r, vm):

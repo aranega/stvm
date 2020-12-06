@@ -81,7 +81,7 @@ class STVMDebugger(Cmd):
         print(f"{purple}{count}{yellow} bytecodes executed in {grey}{s}s{reset}")
 
     def do_continue(self, arg):
-        limit = 100000 if not arg else int(arg)
+        limit = 500000 if not arg else int(arg)
         try:
             count = 0
             a = datetime.datetime.now()
@@ -94,6 +94,7 @@ class STVMDebugger(Cmd):
         except Exception as e:
             try:
                 self.do_list("full")
+                self.do_stack("")
             except Exception:
                 import ipdb; ipdb.set_trace()
 
@@ -265,6 +266,7 @@ class STVMDebugger(Cmd):
         print("object", receiver.display())
         print("object type", receiver.__class__.__name__, "kind", receiver.kind)
         print("class", receiver.class_.name)
+        print("address", receiver.address)
         if receiver.kind < 0:
             return
         if receiver.kind in range(24, 32):

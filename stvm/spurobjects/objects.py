@@ -265,18 +265,23 @@ class Indexable(SpurObject):
         return self.as_int()
 
     def as_float(self):
-        val = self.raw_at(0) << self.nb_bits | self.raw_at(1)
+        val = self.raw_at(1) << self.nb_bits | self.raw_at(0)
         val = struct.unpack(">d", struct.pack(">Q", val))[0]
         return val
 
     def __repr__(self):
-        return f"{super().__repr__()}({self.as_text()})"
+        try:
+            txt = f"({self.as_text()})"
+        except Exception:
+            txt = f"({self.as_float()} or {self.as_int()})"
+        r = super().__repr__()[:-2]
+        return f'{r} {txt}>'
 
     def display(self):
         try:
             txt = f'"{self.as_text()}"'
         except Exception:
-            txt = ""
+            txt = f"{self.as_float()} or {self.as_int()}"
         r = super().display()[:-1]
         return f'{r} {txt}>'
 
