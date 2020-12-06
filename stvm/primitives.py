@@ -282,6 +282,9 @@ def new(rcvr, size, context, vm):
 
 @primitive(75)
 def basicIdentityHash(self, context, vm):
+    if self.identity_hash == 0:
+        import ipdb; ipdb.set_trace()
+        # TODO create a hash and install it in the header
     return integer.create(self.identity_hash, vm.memory)
 
 
@@ -615,7 +618,7 @@ primitive(51)(truncatedFloat)
 
 
 @primitive(552)
-def factionalPart(a, b, context, vm):
+def factionalPart(a, context, vm):
     return float_or_boxed(a.as_float() % 1, vm)
 
 primitive(52)(factionalPart)

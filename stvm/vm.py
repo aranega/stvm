@@ -159,8 +159,8 @@ class VM(object):
         return self.current_context.fetch_bytecode()
 
     def fetch(self):
+        # self.check_process_switch()
         # self.check_interrupts()
-        self.check_process_switch()
         return self.low_fetch()
 
     def decode_execute(self, bytecode):
@@ -187,7 +187,7 @@ class VM(object):
             except ValueError:
                 # deal with super classes
                 cls = cls[0]
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         return self.lookup(original_class, self.memory.dnuSelector)
 
     def allocate(self, stclass, array_size=0, data_len=0):
