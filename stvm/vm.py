@@ -188,11 +188,16 @@ class VM(object):
             except ValueError:
                 # deal with super classes
                 cls = cls[0]
-        # import ipdb; ipdb.set_trace()
+        raise DebugException(f"Method {selector.as_text()} not found in {original_class.display()}")
+        import ipdb; ipdb.set_trace()
         return self.lookup(original_class, self.memory.dnuSelector)
 
     def allocate(self, stclass, array_size=0, data_len=0):
         return self.allocator.allocate(stclass, array_size, data_len)
+
+
+class DebugException(Exception):
+    ...
 
 
 class MemoryAllocator(object):
@@ -306,6 +311,7 @@ class VMContext(object):
 
     def to_smalltalk_context(self, vm):
         if self.stcontext:
+            self.stcontext.update_context()
             return self.stcontext
         memory = vm.memory
         stclass = self.class_
@@ -337,6 +343,25 @@ class VMContext(object):
         ctx.vm_context = self
         self.stcontext = ctx
         return ctx
+
+    def update_context(self):
+        ctx = self.stcontext
+        if self.pc == ctx.pc.value:
+            # nothing changed as the PC didn't move
+            return ctx
+        # update pc
+        self.pc = ctx.pc.value
+        # update stack
+        stackp = ctx.stackp.value
+        self.stack[:] = ctx.array[:stackp]
+        # update sender
+        self.previous = ctx.sender
+        # update compiled method
+        self.compiled_method = ctx.compiled_method
+        # update receiver
+        self.receiver = ctx.receiver
+        # update closure
+        self.closure = ctx.closure
 
     def fetch_bytecode(self):
         return self.compiled_method.raw_data[self.pc]

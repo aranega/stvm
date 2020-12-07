@@ -325,9 +325,15 @@ class CompiledMethod(SpurObject):
         self.bytecodes = raw[num_literals * 8 + 8:-self.trailer.size]
 
     def __getitem__(self, i):
-        if not isinstance(i, slice) and i > self.initial_pc:
+        if not isinstance(i, slice) and i >= self.initial_pc:
             return integer.create(self.raw_data[i], self.memory)
         return super().__getitem__(i)
+
+    def __setitem__(self, i, value):
+        if not isinstance(i, slice) and i >= self.initial_pc:
+            self.raw_data[i] = value.value
+            return
+        super().__setitem__(i, value)
 
     def size(self):
         return self.number_of_slots * 8 - (self.kind - 24)

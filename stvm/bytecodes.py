@@ -647,8 +647,8 @@ class PushOrPopIntoArray(object):
         array_cls = vm.memory.array
         inst = vm.allocate(array_cls, array_size=size)
         if pop:
-            for i in range(size):
-                inst.slots[i] = context.pop()
+            for i in range(1, size + 1):
+                inst.slots[-i] = context.pop()
         context.push(inst)
         context.pc += 2
 
@@ -940,7 +940,7 @@ class SendSpecialMessage(object):
             nb_params = vm.memory.special_symbols[pos + 1]
             args = []
             for i in range(nb_params):
-                args.append(f"arg={context.stack[-i - 1].display()}>")
+                args.append(f"arg={context.stack[-i - 1].display()}")
             args.reverse()
             args = ", ".join(args)
             receiver = context.stack[-nb_params - 1]

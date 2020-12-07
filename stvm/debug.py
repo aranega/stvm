@@ -1,17 +1,7 @@
 import datetime
 from cmd import Cmd
 from pprint import pprint
-from .vm import VM
-
-
-class bcolors:
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
+from .vm import VM, DebugException
 
 
 class STVMDebugger(Cmd):
@@ -26,16 +16,6 @@ class STVMDebugger(Cmd):
         self.vm = vm
         self.cmdqueue = ['stack', 'list']
 
-    # def cmdloop(self, intro=None):
-    #     while True:
-    #         try:
-    #             super().cmdloop(intro="")
-    #             break
-    #         except KeyboardInterrupt:
-    #             # self.do_stack("")
-    #             # self.do_list("")
-    #             ...
-
     def do_untilswith(self, arg):
         process = self.vm.active_process
         while process is self.vm.active_process:
@@ -43,6 +23,51 @@ class STVMDebugger(Cmd):
         self.do_stack("")
         self.do_list("")
         print(f"<*> Process {self.vm.active_process.display()}")
+
+    def do_untilerror(self, arg):
+        try:
+            while True:
+                self.vm.decode_execute(self.vm.fetch())
+        except DebugException as e:
+            print(f"{colors.fg.red}Stopped on exception >> {e} in {self.vm.current_context.compiled_method.selector.as_text()}")
+            print(colors.reset)
+            current = self.vm.current_context
+            self.do_stack("")
+            self.do_list("")
+        except Exception as e:
+            try:
+                self.do_list("")
+                self.do_stack("")
+            except Exception:
+                print("Error in displaying the compiled method or the stack")
+                import ipdb; ipdb.set_trace()
+
+            print(f"{colors.fg.red}Stopped on exception >> {e} in {self.vm.current_context.compiled_method.selector.as_text()}")
+            print("Going to the previous context before the send")
+            print(colors.reset)
+            current = self.vm.current_context
+            sender = current.previous
+            sender_pc = self.sender_pc(current)
+            sender.pc = sender_pc
+            sender.stack.extend(current.stack[:current.compiled_method.num_args])
+            self.vm.current_context = sender
+            self.do_stack("")
+            self.do_list("")
+
+
+    def sender_pc(self, context):
+        sender = context.previous
+        current_pc = sender.pc
+        cm = sender.compiled_method
+        if cm.raw_slots[current_pc - 1] in [*range(176, 208), *range(208, 256)]:
+            return current_pc - 1
+        if cm.raw_slots[current_pc - 2] in [131, 133, 134]:
+            return current_pc - 2
+        if cm.raw_slots[current_pc - 3] == 132:
+            return current_pc - 3
+        import ipdb; ipdb.set_trace()
+
+
 
     def do_step(self, arg):
         self.vm.decode_execute(self.vm.fetch())
@@ -165,6 +190,9 @@ class STVMDebugger(Cmd):
 
     def do_stack(self, arg):
         context = self.vm.current_context.adapt_context()
+        self.print_stack(context, arg)
+
+    def print_stack(self, context, arg):
         stack = context.stack
         if arg.startswith("top"):
             self.navigate(stack[-1], arg[3:])
@@ -189,7 +217,15 @@ class STVMDebugger(Cmd):
         print(colors.reset)
 
     def do_context(self, arg):
+        args = arg.strip()
         context = self.vm.current_context
+        if args:
+            depth = int(args)
+            for i in range(depth):
+                context = context.previous
+            self.print_stack(context, "")
+            self.print_cm(context, "")
+            return
         self.print_context(context, arg)
 
     def print_context(self, context, arg):
@@ -312,19 +348,19 @@ class STVMDebugger(Cmd):
         context = self.vm.current_context
         current = context
         nil = self.vm.memory.nil
-        i = 1
+        i = 0
         while context != nil:
             line = colors.fg.purple
             selector = context.compiled_method.selector.as_text()
             indic = f"{colors.reset}{colors.fg.purple} "
             if context is current:
                 indic = f"{colors.bold}*"
-            line += f"{indic}   #{selector} rcvr={context.receiver.display()}"
+            line += f"{i:3} {indic}   #{selector} rcvr={context.receiver.display()}"
             # line += f"        {context.display()}"
             print(line)
             context = context.sender
             i += 1
-        print(f"Depth {i}")
+        # print(f"Depth {i}")
         print(colors.reset)
 
     def do_quit(self, arg):

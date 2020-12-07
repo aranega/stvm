@@ -66,8 +66,35 @@ class Context(VariableSizedW):
     def to_smalltalk_context(self, vm):
         return self
 
+    def update_context(self):
+        if not self.vm_context:
+            return self.adapt_context()
+        native_ctx = self.vm_context
+        if self.pc.value == native_ctx.pc:
+            # nothing changed as the PC didn't move
+            return native_ctx
+        # update pc
+        self[1] = integer.create(native_ctx.pc, self.memory)
+        # update stackp
+        stackp = len(native_ctx.stack)
+        self[2] = integer.create(stackp, self.memory)
+        # update stack
+        for i, v in enumerate(native_ctx.stack):
+            self.stack[i] = v
+        # update sender
+        if native_ctx.previous:
+            self[0] = native_ctx.sender.stcontext
+        # update compiled method
+        self[3] = native_ctx.compiled_method
+        # update receiver
+        self[5] = native_ctx.receiver
+        # update closure
+        self[4] = native_ctx.closure
+
+
     def adapt_context(self):
         if self.vm_context:
+            self.vm_context.update_context()
             return self.vm_context
         from ..vm import VMContext
         memory = self.memory

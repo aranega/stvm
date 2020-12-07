@@ -41,7 +41,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except Exception as e:
         if number in (117, 121, 71, *range(41, 60)):
             raise e
-        if number in (105, *range(1, 16), *range(541, 560)):
+        if number in (60, 105, *range(1, 16), *range(541, 560)):
             raise PrimitiveFail
         raise e
         raise PrimitiveFail
@@ -313,7 +313,6 @@ def store_stackp(self, new_stackp, context, vm):
     else:
         self.stackp = new_stackp
 
-
 @primitive(83, activate=True)
 def perform(rcvr, selector, *args, context, vm):
     method = vm.lookup(rcvr.class_, selector)
@@ -407,7 +406,9 @@ def identity(rcvr, arg, context, vm):
 
 
 @primitive(111)
-def objectClass(rcvr, context, vm):
+def objectClass(rcvr, *arg, context, vm):
+    if arg:
+        return arg[0].class_
     return rcvr.class_
 
 
@@ -516,12 +517,12 @@ def closure_value(closure, *args, context, vm):
 
 @primitive(210)
 def context_at(ctx, at, context, vm):
-    return ctx.slots[at.value]
+    return ctx.stack[at.value]
 
 
 @primitive(211)
 def context_at_put(ctx, at, val, context, vm):
-    ctx.slots[at.value - 1] = val
+    ctx.stack[at.value - 1] = val
     return val
 
 
