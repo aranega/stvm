@@ -251,12 +251,12 @@ def smallintAsFloat(self, context, vm):
 
 @primitive(60)
 def at(self, at, context, vm):
-    return self[at.value - 1]
+    return self.basic_at(at.value - 1)
 
 
 @primitive(61)
 def at_put(self, at, val, context, vm):
-    self[at.value - 1] = val
+    self.basic_at_put(at.value - 1, val)
     return val
 
 
@@ -283,10 +283,22 @@ def new(rcvr, size, context, vm):
 @primitive(75)
 def basicIdentityHash(self, context, vm):
     if self.identity_hash == 0:
-        import ipdb; ipdb.set_trace()
-        # TODO create a hash and install it in the header
+        h = new_object_hash(vm) & 0x3FFFFF
+        self.h2 = (self.h2 & 0xFFC00000) | h
+        self.header2[:] = struct.pack("I", self.h2)
+        self.identity_hash = h
     return integer.create(self.identity_hash, vm.memory)
 
+
+def new_object_hash(vm):
+    last = vm.last_hash
+    while "hash is zero":
+        last *= 16807
+        h = last + (last >> 4)
+        if h & 0x3FFFFF != 0:
+            break
+    vm.last_hash = last
+    return h
 
 @primitive(76)
 def store_stackp(self, new_stackp, context, vm):

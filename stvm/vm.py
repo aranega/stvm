@@ -29,6 +29,7 @@ class VM(object):
         self.nextWakeupUsecs = 0
         self.method_cache = {}
         self.opened_files = {}
+        self.last_hash = image.last_hash
 
     def add_last_link_list(self, link, linkedlist):
         if self.is_empty_list(linkedlist):

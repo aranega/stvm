@@ -135,6 +135,12 @@ class SpurObject(object):
     def __setitem__(self, index, value):
         self.slots[index] = value
 
+    def basic_at(self, index):
+        return self[index]
+
+    def basic_at_put(self, index, value):
+        self[index] = value
+
     @property
     def inst_size(self):
         return self[2] & 0xFFFF
@@ -181,7 +187,6 @@ class FixedSized(SpurObject):
 class VariableSizedWO(SpurObject):
     ...
 
-
 class ClassTable(VariableSizedWO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -202,9 +207,15 @@ class VariableSizedW(SpurObject):
         self.instvars = self.slots[:nb_instvars]
         self.array = self.slots[nb_instvars:]
 
+    def basic_at(self, index):
+        return self.array[index]
+
+    def basic_at_put(self, index, value):
+        self.array[index] = value
+
 
 @spurobject(4)
-class WeakVariableSized(SpurObject):
+class WeakVariableSized(VariableSizedW):
     ...
 
 
