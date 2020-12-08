@@ -188,8 +188,8 @@ class VM(object):
             except ValueError:
                 # deal with super classes
                 cls = cls[0]
-        raise DebugException(f"Method {selector.as_text()} not found in {original_class.display()}")
-        import ipdb; ipdb.set_trace()
+        # raise DebugException(f"Method {selector.as_text()} not found in {original_class.display()}")
+        # import ipdb; ipdb.set_trace()
         return self.lookup(original_class, self.memory.dnuSelector)
 
     def allocate(self, stclass, array_size=0, data_len=0):
