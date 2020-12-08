@@ -5,4 +5,5 @@ from ..primitives import PrimitiveFail
 
 
 def primitiveCopyBits(self, context, vm):
-    raise PrimitiveFail
+    import ipdb; ipdb.set_trace()
+    

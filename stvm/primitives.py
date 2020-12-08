@@ -5,6 +5,7 @@ import importlib
 from .utils import *
 from .spurobjects import ImmediateInteger as integer
 from .spurobjects import ImmediateFloat as smallfloat
+from .spurobjects import ImmediateChar as char
 
 
 nil = object()
@@ -41,7 +42,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except Exception as e:
         if number in (117, 121, 71, *range(41, 60)):
             raise e
-        if number in (60, 105, *range(1, 16), *range(541, 560)):
+        if number in (105, *range(1, 16), *range(541, 560)):
             raise PrimitiveFail
         raise e
         raise PrimitiveFail
@@ -265,6 +266,17 @@ def basicSize(self, context, vm):
     return integer.create(len(self), vm.memory)
 
 
+@primitive(63)
+def string_at(self, i, context, vm):
+    return char.create(chr(self.raw_at(i.value - 1)), vm.memory)
+
+
+@primitive(64)
+def string_at_put(self, i, val, context, vm):
+    self[i.value - 1] = val
+    return val
+
+
 @primitive(68)
 def compiledmethod_objectAt(rcvr, i, context, vm):
     return rcvr[i.value - 1]
@@ -486,7 +498,7 @@ def closure_value(closure, *args, context, vm):
     new_context = context.__class__(rcvr, method, vm.memory)
     new_context.pc = closure.startpc.value
     new_context.closure = closure
-    new_context.stack = list(args)
+    new_context.stack = [*args]
     new_context.stack.extend(reversed(closure.copied))
     start_temps = method.num_args
     stop_temps = method.num_temps
@@ -505,7 +517,7 @@ def closure_value(closure, *args, context, vm):
     new_context.pc = closure.startpc.value
     new_context.closure = closure
 
-    new_context.stack = list(args)
+    new_context.stack = [*args]
     new_context.stack.extend(reversed(closure.copied))
     start_temps = method.num_args
     stop_temps = method.num_temps

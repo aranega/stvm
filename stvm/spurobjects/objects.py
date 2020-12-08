@@ -260,6 +260,8 @@ class Indexable(SpurObject):
             value = int.to_bytes(value, length=self.nb_bits // 8, byteorder="little")
         elif t is integer:
             value = int.to_bytes(value.value, length=self.nb_bits // 8, byteorder="little")
+        elif t is char:
+            value = int.to_bytes(ord(value.value), length=self.nb_bits // 8, byteorder="little")
         self.raw_slots[self.effective_slice(index)] = value
 
     def as_text(self):
@@ -414,3 +416,4 @@ class MethodTrailer(object):
 
 
 from .immediate import ImmediateInteger as integer
+from .immediate import ImmediateChar as char

@@ -205,6 +205,7 @@ class MemoryAllocator(object):
         self.memory = memory
         self.start = 1 << 3
         self.current = self.start
+        self.limit = self.memory.special_object_array.address
 
     def allocate(self, stclass, array_size=0, data_len=0):
         addr = self.current
