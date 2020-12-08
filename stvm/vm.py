@@ -30,6 +30,7 @@ class VM(object):
         self.method_cache = {}
         self.opened_files = {}
         self.last_hash = image.last_hash
+        self.interrupt_keycode = 0
 
     def add_last_link_list(self, link, linkedlist):
         if self.is_empty_list(linkedlist):
@@ -242,8 +243,8 @@ class MemoryAllocator(object):
             data_len = array_size
         if data_len:
             bits = Indexable._bits[format - 9]
-            array_size = ceil(data_len / bits)
             data_per_row = 64 // bits
+            array_size = ceil(data_len / data_per_row)
             format += (data_per_row - (data_len % data_per_row)) % data_per_row
         total_slots = stclass.inst_size + array_size
         slots = total_slots if total_slots < 255 else 255

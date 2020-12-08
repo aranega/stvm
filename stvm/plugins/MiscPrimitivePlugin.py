@@ -1,4 +1,5 @@
 from ..spurobjects import ImmediateInteger as integer
+from ..primitives import PrimitiveFail
 
 
 def primitiveStringHash(cls, aString, species_hash, context, vm):
@@ -57,3 +58,7 @@ def primitiveCompareString(cls, s1, s2, order, context, vm):
     if len1 < len2:
         return integer.create(1, vm.memory)
     return integer.create(3, vm.memory)
+
+
+def primitiveFindFirstInString(cls, string, inclusionMap, start, context, vm):
+    raise PrimitiveFail

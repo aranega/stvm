@@ -36,7 +36,9 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except KeyError:
         unimpl.add(number)
         # print("** Unimplemented", unimpl)
-        raise PrimitiveFail
+        if number in (19, 38, 77, 90, 91, 93, 94, 107, 108, 149, 177, 195, 197, 198, 199):
+            raise PrimitiveFail
+        raise Exception(f"Missing primitive {number} called with [{', '.join(a.display() for a in args)}]")
     except PrimitiveFail as e:
         raise e
     except Exception as e:
@@ -151,6 +153,15 @@ def bitshift(self, shift, context, vm):
     return smallint(res, vm)
 
 
+@primitive(18)
+def make_point(x, y, context, vm):
+    point_class = vm.memory.point
+    point = vm.allocate(point_class)
+    point[0] = x
+    point[1] = y
+    return point
+
+
 # All these primitives should fail for a large negative number
 @primitive(21)
 def large_add(a, b, context, vm):
@@ -243,6 +254,12 @@ def large_divRound(a, b, context, vm):
 
 
 primitive(33)(large_divRound)
+
+
+# @primitive(39)
+# def float_put_at(f, index, value, context, vm):
+#     f[index.value - 1] = value
+#     return value
 
 
 @primitive(40)
@@ -380,10 +397,6 @@ def be_cursor(self, mask_form, context, vm):
                 line += "O"
             else:
                 line += "i"
-            # if b == "1":
-            #     line += "#"
-            # else:
-            #     line += "."
             if j > 0 and j % width == 0:
                 break
         print(line)
@@ -391,8 +404,8 @@ def be_cursor(self, mask_form, context, vm):
 
 @primitive(102)
 def be_display(self, context, vm):
-    import ipdb; ipdb.set_trace()
-    
+    # record object in special object array
+    vm.memory.special_object_array[14] = self
 
 
 @primitive(105)
@@ -467,6 +480,12 @@ def special_object_oop(self, context, vm):
     return vm.memory.special_object_array
 
 
+# this primitive is obsolete
+@primitive(133)
+def set_keycode(sensor, keycode, context, vm):
+    vm.interrupt_keycode = keycode.value
+
+
 @primitive(135)
 def millisecond_clock(self, context, vm):
     ms = int(round(time.time() * 1000))
@@ -485,6 +504,11 @@ def clone(self, context, vm):
     for i, v in enumerate(self.raw_slots):
         new.raw_slots[i] = v
     return new
+
+
+@primitive(169)
+def not_identical(a, b, context, vm):
+    return a.address != b.address
 
 
 @primitive(171)
@@ -549,10 +573,18 @@ def context_at_put(ctx, at, val, context, vm):
     return val
 
 
+# Need to fix so it will be utc
 @primitive(240)
 def utc_microsecond_clock(rcvr, context, vm):
     t = int(round(time.time() * 1000000))
     return integer.create(t, vm.memory)
+
+
+@primitive(241)
+def local_microsecond_clock(rcvr, context, vm):
+    t = int(round(time.time() * 1000000))
+    return integer.create(t, vm.memory)
+
 
 @primitive(242)
 def signal_at_microseconds(self, sema, microsecs, context, vm):

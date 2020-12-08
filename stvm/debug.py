@@ -46,7 +46,7 @@ class STVMDebugger(Cmd):
                 self.do_stack("")
             except Exception:
                 print("Error in displaying the compiled method or the stack")
-                import ipdb; ipdb.set_trace()
+                # import ipdb; ipdb.set_trace()
 
             print(f"{colors.fg.red}Stopped on exception >> {e} in {self.vm.current_context.compiled_method.selector.as_text()}")
             print("Going to the previous context before the send")
@@ -149,7 +149,8 @@ class STVMDebugger(Cmd):
                 self.do_list("full")
                 self.do_stack("")
             except Exception:
-                import ipdb; ipdb.set_trace()
+                # import ipdb; ipdb.set_trace()
+                ...
 
             print(f"{colors.fg.red}Stopped on exception >> {e}")
             print(colors.reset)
