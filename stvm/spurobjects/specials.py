@@ -91,7 +91,6 @@ class Context(VariableSizedW):
         # update closure
         self[4] = native_ctx.closure
 
-
     def adapt_context(self):
         if self.vm_context:
             self.vm_context.update_context()
@@ -149,6 +148,9 @@ class BlockClosure(VariableSizedW):
     @property
     def home(self):
         return self.outer_context.home
+
+    def basic_at(self, i):
+        return self.slots[i]
 
 
 # @spurobject(1, class_index=SEMAPHORE_CLASS)

@@ -40,7 +40,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
     except PrimitiveFail as e:
         raise e
     except Exception as e:
-        if number in (117, 121, 71, *range(41, 60)):
+        if number in (242, 117, 121, 71, *range(41, 60)):
             raise e
         if number in (105, *range(1, 16), *range(541, 560)):
             raise PrimitiveFail
@@ -389,6 +389,12 @@ def be_cursor(self, mask_form, context, vm):
         print(line)
 
 
+@primitive(102)
+def be_display(self, context, vm):
+    import ipdb; ipdb.set_trace()
+    
+
+
 @primitive(105)
 def replacefrom_to_with_startingat(self, start, stop, other, start_other, context, vm):
     start = start.value - 1
@@ -460,6 +466,11 @@ def signal_at_byte_left(self, threasold, context, vm):
 def special_object_oop(self, context, vm):
     return vm.memory.special_object_array
 
+
+@primitive(135)
+def millisecond_clock(self, context, vm):
+    ms = int(round(time.time() * 1000))
+    return integer.create(ms & 0x1FFFFFFF, vm.memory)
 
 @primitive(142)
 def vm_paths(self, context, vm):
@@ -547,7 +558,6 @@ def utc_microsecond_clock(rcvr, context, vm):
 def signal_at_microseconds(self, sema, microsecs, context, vm):
     memory = vm.memory
     index = memory.special_array["timer_semaphore"]
-    # import ipdb; ipdb.set_trace()
 
     if sema is memory.nil:
         memory.special_object_oop[index] = nil
@@ -556,6 +566,9 @@ def signal_at_microseconds(self, sema, microsecs, context, vm):
     memory.special_object_array[index] = sema
     memory.timer_semaphore = sema
     vm.nextWakeupUsecs = microsecs.value
+
+
+primitive(136)(signal_at_microseconds)
 
 
 @primitive(254)
