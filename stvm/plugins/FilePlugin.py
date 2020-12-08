@@ -40,9 +40,9 @@ def primitiveFileOpen(cls, file_name, writable, context, vm):
     if writable is vm.memory.false:
         if not p.exists():
             return vm.memory.nil
-        mode = "r"
+        mode = "rb"
     else:
-        mode = "w"
+        mode = "wb"
     f = p.open(mode)
     fileno = f.fileno()
     vm.opened_files[fileno] = f
@@ -52,3 +52,11 @@ def primitiveFileOpen(cls, file_name, writable, context, vm):
 def primitiveFileGetPosition(cls, fileno, context, vm):
     f = vm.opened_files[fileno.value]
     return large_or_small(f.tell(), vm)
+
+
+def primitiveFileWrite(f, fileno, string, start, count, context, vm):
+    f = vm.opened_files[fileno.value]
+    start = start.value - 1
+    countv = count.value
+    f.write(string.raw_slots[start:start + countv])
+    return count
