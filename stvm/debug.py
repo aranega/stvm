@@ -17,6 +17,9 @@ class STVMDebugger(Cmd):
         self.cmdqueue = ['stack', 'list']
 
     def do_untilswith(self, arg):
+        """
+        Runs the VM until a process switch is performed (disabled)
+        """
         process = self.vm.active_process
         while process is self.vm.active_process:
             self.vm.decode_execute(self.vm.fetch())
@@ -25,6 +28,9 @@ class STVMDebugger(Cmd):
         print(f"<*> Process {self.vm.active_process.display()}")
 
     def do_untilerror(self, arg):
+        """
+        Runs the VM until an error occurs, and go back to the previous context, before the send is executed.
+        """
         try:
             while True:
                 self.vm.decode_execute(self.vm.fetch())
@@ -70,11 +76,19 @@ class STVMDebugger(Cmd):
 
 
     def do_step(self, arg):
+        """
+        Performs a step-into
+        """
         self.vm.decode_execute(self.vm.fetch())
         self.do_stack("")
         self.do_list("")
 
     def do_stop(self, arg):
+        """
+        Stops on a bytecode number
+        arg:     the number bytecode
+        example: stop 139
+        """
         bc = int(arg)
         current = self.vm.fetch()
         while current != bc:
@@ -84,6 +98,11 @@ class STVMDebugger(Cmd):
         self.do_list("")
 
     def do_break(self, arg):
+        """
+        Break on a method execution
+        arg:     the selector
+        example: break +
+        """
         name = arg.strip()
         while self.vm.current_context.compiled_method.selector.as_text() != name:
             self.vm.decode_execute(self.vm.fetch())
@@ -91,6 +110,11 @@ class STVMDebugger(Cmd):
         self.do_list("")
 
     def do_time(self, arg):
+        """
+        Time how many bytecode are executed in 1 second
+        arg: if none 1s otherwise, the number of seconds.
+             used to perform rough benches
+        """
         arg = arg or 1
         s = float(arg)
         end = datetime.datetime.now() + datetime.timedelta(seconds=s)
@@ -106,6 +130,10 @@ class STVMDebugger(Cmd):
         print(f"{purple}{count}{yellow} bytecodes executed in {grey}{s}s{reset}")
 
     def do_continue(self, arg):
+        """
+        Continue execution. Currently, will stop when the execution is a little bit too long (too many bytecode are executed).
+        The limit is 500000, but a new number can be passed as argument
+        """
         limit = 500000 if not arg else int(arg)
         try:
             count = 0
@@ -127,6 +155,9 @@ class STVMDebugger(Cmd):
             print(colors.reset)
 
     def do_next(self, arg):
+        """
+        Performs a "step over"
+        """
         context = self.vm.current_context
         past_ctx = []
         while context:
@@ -140,6 +171,9 @@ class STVMDebugger(Cmd):
         self.do_list("")
 
     def do_metadebug(self, arg):
+        """
+        Launch the python debugger (IPDB) here
+        """
         context = self.vm.current_context
         cm = context.compiled_method
         self.do_stack("")
@@ -147,6 +181,11 @@ class STVMDebugger(Cmd):
         import ipdb; ipdb.set_trace()
 
     def do_list(self, arg):
+        """
+        Displays the method bytecode set.
+        arg: if none, only +-5 bytecode are displayed from the program counter
+             if "full", all the method is displayed
+        """
         context = self.vm.current_context.adapt_context()
         return self.print_cm(context, arg)
 
@@ -189,6 +228,9 @@ class STVMDebugger(Cmd):
 
 
     def do_stack(self, arg):
+        """
+        Displays the current stack
+        """
         context = self.vm.current_context.adapt_context()
         self.print_stack(context, arg)
 
@@ -217,6 +259,9 @@ class STVMDebugger(Cmd):
         print(colors.reset)
 
     def do_context(self, arg):
+        """
+        Displays the current context
+        """
         args = arg.strip()
         context = self.vm.current_context
         if args:
@@ -246,10 +291,19 @@ class STVMDebugger(Cmd):
         print("pc       ", context.pc)
 
     def do_active_process(self, arg):
+        """
+        Displays the active process
+        """
         process = self.vm.active_process
         self.navigate(process, arg)
 
     def do_receiver(self, arg):
+        """
+        Displays the receiver.
+        It is possible to navigate slots of the object.
+        example: receiver slot 1
+                 receiver slot 0 slot 2
+        """
         context = self.vm.current_context
         receiver = context.receiver
         self.navigate(receiver, arg)
@@ -264,6 +318,9 @@ class STVMDebugger(Cmd):
             s = s.sender
 
     def do_method(self, arg):
+        """
+        Displays the current compiled method
+        """
         cm = self.vm.current_context.compiled_method
         self.navigate(cm, arg)
 
@@ -339,12 +396,23 @@ class STVMDebugger(Cmd):
             self.do_print_context("")
 
     def do_object(self, arg):
+        """
+        Displays the content of an object at an address.
+        It is possible to navigate slots of the object.
+        example: object 0x1234 slot 1
+                 object 0x1234 slot 0 slot 2
+        """
         args = [a for a in arg.strip().split(" ") if a]
         address = int(args[0], 0)
         obj = self.vm.memory.object_at(address)
         self.navigate(obj, " ".join(args[1:]))
 
     def do_where(self, arg):
+        """
+        Displays the stack of contexts.
+        arg: if none, the full stack is displayed
+             if a number, details about this context is displayed
+        """
         context = self.vm.current_context
         current = context
         nil = self.vm.memory.nil
