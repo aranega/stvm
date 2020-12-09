@@ -161,8 +161,8 @@ class VM(object):
         return self.current_context.fetch_bytecode()
 
     def fetch(self):
-        # self.check_process_switch()
-        # self.check_interrupts()
+        self.check_process_switch()
+        self.check_interrupts()
         return self.low_fetch()
 
     def decode_execute(self, bytecode):

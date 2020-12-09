@@ -2,11 +2,12 @@ from ..spurobjects import ImmediateInteger as integer
 from ..primitives import PrimitiveFail
 
 
-def primitiveStringHash(cls, aString, species_hash, context, vm):
-    aString = aString.as_text()
+def primitiveStringHash(*args, context, vm):
+    *cls, string, species_hash = args
+    string = string.as_text()
     species_hash = species_hash.value
     hash_val = species_hash  & 0xFFFFFFF
-    for char in aString:
+    for char in string:
         hash_val += ord(char)
         low = hash_val & 16383
         hash_val = (0x260D * low + ((0x260D * (hash_val >> 14) + (0x0065 * low) & 16383) * 16384)) & 0x0FFFFFFF
@@ -24,10 +25,54 @@ def primitiveIndexOfAsciiInString(cls, byte, string, start, context, vm):
         return integer.create(0, vm.memory)
 
 
-def primitiveDecompressFromByteArray(cls, dest, src, start, context, vm):
-    import ipdb; ipdb.set_trace()
-    for i, d in enumerate(src):
-        ...
+def primitiveDecompressFromByteArray(cls, bm, ba, index, context, vm):
+    i = index.value - 1
+    end = len(ba) - 1
+    k = 0
+    past_end = len(bm)
+    while i <= end:
+        v = ba[i].value
+        i += 1
+        if v > 223:
+            if v <= 254:
+                v = (v - 224) * 256 + ba[i].value
+                i += 1
+            else:
+                v = 0
+                for _ in range(4):
+                    v = (v << 8) + ba[i].value
+                    i += 1
+        n = v >> 2
+        if k + n > past_end:
+            raise PrimitiveFail
+        code = v & 0b11
+        if code == 3:
+            for _ in range(n):
+                data = 0
+                for _ in range(4):
+                    data = (data << 8) | ba[i].value
+                    i += 1
+                bm[k] = integer.create(data, vm.memory)
+                k += 1
+        elif code == 2:
+            data = 0
+            for _ in range(4):
+                data = (data << 8) | ba[i].value
+                i += 1
+            for _ in range(n):
+                bm[k] = integer.create(data, vm.memory)
+                k += 1
+        elif code == 1:
+            data = ba[i].value
+            i += 1
+            data = data | (data << 8)
+            data = data | (data << 16)
+            for _ in range(n):
+                bm[k] = integer.create(data, vm.memory)
+                k += 1
+        elif code == 0:
+            ...  # skip
+
 
 def primitiveFindSubstring(cls, key, body, start, match_table, context, vm):
     # TODO Use the match_table?

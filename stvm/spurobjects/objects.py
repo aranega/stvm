@@ -311,16 +311,17 @@ class CompiledMethod(SpurObject):
         raw = self.raw_data
         pc = self.initial_pc
         if method_format & 0x10000:
-            primitive = raw[pc + 1] + (raw[pc + 2] << 8)
+            self.primitive = raw[pc + 1] + (raw[pc + 2] << 8)
         else:
-            primitive = 0
+            self.primitive = 0
 
         self.sign_flag = method_format < 0
+        # if self.sign_flag:
+        #     import ipdb; ipdb.set_trace()
         self.num_literals = num_literals
         self.num_args = (method_format >> 24) & 0x0F
         self.num_temps = (method_format >> 18) & 0x3F
         self.frame_size = 56 if method_format & 0x20000 else 16
-        self.primitive = primitive
         self.literals = self.slots[1:num_literals]
         # self.trailer_byte = raw[-1]
         self.trailer = MethodTrailer(raw[-1], self)

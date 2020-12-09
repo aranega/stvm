@@ -434,6 +434,7 @@ class STVMDebugger(Cmd):
 
     def do_quit(self, arg):
         "Quit the VM debugger"
+        print()
         return True
 
     do_EOF = do_quit

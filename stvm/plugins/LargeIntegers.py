@@ -55,6 +55,22 @@ def primDigitMultiplyNegative(self, arg, neg, context, vm):
     return large(r, neg is vm.memory.true, vm)
 
 
+
+def primDigitBitShiftMagnitude(self, shift, context, vm):
+    v = to_int(self)
+    shift = to_int(shift)
+    neg = v < 0
+    if neg:
+        v = -v
+    if shift > 0:
+        v <<= shift
+    else:
+        v >>= -shift
+    if neg:
+        v = -v
+    return large_or_small(v, vm)
+
+
 def large_or_small(value, vm):
     if SMALLINT_MIN <= value <= SMALLINT_MAX:
         return integer.create(value, vm.memory)

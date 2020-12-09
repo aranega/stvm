@@ -1,4 +1,5 @@
 import time
+from datetime import datetime as dt
 import math
 import struct
 import importlib
@@ -35,16 +36,14 @@ def execute_primitive(number, context, vm, *args, **kwargs):
         return result
     except KeyError:
         unimpl.add(number)
-        # print("** Unimplemented", unimpl)
-        if number in (19, 38, 77, 90, 91, 93, 94, 107, 108, 149, 177, 195, 197, 198, 199):
+        print("** Unimplemented", sorted(unimpl))
+        if number in (19, 38, 65, 66, 77, 90, 91, 93, 94, 107, 108, 149, 159, 177, 195, 197, 198, 199):
             raise PrimitiveFail
         raise Exception(f"Missing primitive {number} called with [{', '.join(a.display() for a in args)}]")
     except PrimitiveFail as e:
         raise e
     except Exception as e:
-        if number in (242, 117, 121, 71, *range(41, 60)):
-            raise e
-        if number in (105, *range(1, 16), *range(541, 560)):
+        if number in (60, 105, *range(1, 16), *range(541, 560)):
             raise PrimitiveFail
         raise e
         raise PrimitiveFail
@@ -256,10 +255,9 @@ def large_divRound(a, b, context, vm):
 primitive(33)(large_divRound)
 
 
-# @primitive(39)
-# def float_put_at(f, index, value, context, vm):
-#     f[index.value - 1] = value
-#     return value
+@primitive(38)
+def float_at(f, index, context, vm):
+    return f[index.value - 1]
 
 
 @primitive(40)
@@ -269,6 +267,7 @@ def smallintAsFloat(self, context, vm):
 
 @primitive(60)
 def at(self, at, context, vm):
+    # if self.class_.name == "Weak"
     return self.basic_at(at.value - 1)
 
 
@@ -460,7 +459,7 @@ def external_call(*args, context, vm):
     call = pragma[1].as_text()
     plugin_module = importlib.import_module(f'stvm.plugins.{module}')
     plugin_function = getattr(plugin_module, call)
-    return plugin_function(*args, context, vm)
+    return plugin_function(*args, context=context, vm=vm)
 
 
 @primitive(121)
@@ -488,8 +487,9 @@ def set_keycode(sensor, keycode, context, vm):
 
 @primitive(135)
 def millisecond_clock(self, context, vm):
-    ms = int(round(time.time() * 1000))
+    ms = int(round(dt.now().timestamp() + 2177452800))
     return integer.create(ms & 0x1FFFFFFF, vm.memory)
+
 
 @primitive(142)
 def vm_paths(self, context, vm):
@@ -506,9 +506,27 @@ def clone(self, context, vm):
     return new
 
 
+@primitive(149)
+def get_system_attribute(self, index, context, vm):
+    index = index.value - 2
+    if index < 0:
+        # not handled at the moment
+        return nil
+    import sys
+    argv = sys.argv
+    if index >= len(argv):
+        return nil
+    return to_bytestring(argv[index], vm)
+
+
 @primitive(169)
 def not_identical(a, b, context, vm):
     return a.address != b.address
+
+
+@primitive(170)
+def immediate_aschar(cls, value, context, vm):
+    return char.create(chr(value.value), vm.memory)
 
 
 @primitive(171)
@@ -524,6 +542,37 @@ def identity_hash(self, context, vm):
 @primitive(176)
 def max_identity_hash(self, context, vm):
     return integer.create(0x3FFFFF, vm.memory)
+
+
+@primitive(188)
+def execute_method_argsarray(receiver, args_array, method, context, vm):
+    import ipdb; ipdb.set_trace()
+
+
+@primitive(189)
+def execute_method(receiver, args, method, context, vm):
+    import ipdb; ipdb.set_trace()
+
+
+@primitive(195)
+def next_unwind_context_upto(self, upto, context, vm):
+    tmp = self
+    while tmp.sender and tmp.sender is not upto:
+        if tmp.is_unwind():
+            return tmp
+        tmp = tmp.sender
+    return nil
+
+
+@primitive(197)
+def find_handler_context(self, context, vm):
+    tmp = self
+    while tmp:
+        if tmp.is_handler_or_signaling():
+            return tmp
+        tmp = tmp.sender
+    return nil
+
 
 @primitive(range(201, 205), activate=True)
 def closure_value(closure, *args, context, vm):
@@ -573,16 +622,15 @@ def context_at_put(ctx, at, val, context, vm):
     return val
 
 
-# Need to fix so it will be utc
 @primitive(240)
 def utc_microsecond_clock(rcvr, context, vm):
-    t = int(round(time.time() * 1000000))
+    t = int(round((dt.utcnow().timestamp() + 2177452800) * 1000000))
     return integer.create(t, vm.memory)
 
 
 @primitive(241)
 def local_microsecond_clock(rcvr, context, vm):
-    t = int(round(time.time() * 1000000))
+    t = int(round((dt.now().timestamp() + 2177452800) * 1000000))
     return integer.create(t, vm.memory)
 
 
@@ -698,14 +746,14 @@ primitive(52)(factionalPart)
 def exponent(a, context, vm):
     addr = a.address
     exp = (addr >> 56) + 896 - 0x3FE - 1
-    return integer.create(exp, vm)
+    return integer.create(exp, vm.memory)
 
 
 @primitive(53)
 def exponent_boxed(a, context, vm):
     value = struct.unpack(">Q", struct.pack(">d", a.as_float()))[0]
     exp = (value >> 52) & 0x7FF
-    return integer.create(exp, vm)
+    return integer.create(exp, vm.memory)
 
 
 @primitive(554)

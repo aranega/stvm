@@ -676,7 +676,7 @@ class CallPrimitive(object):
         current_pc = context.pc
         try:
             pc = context.pc
-            primitive = cm.raw_data[pc + 1: pc + 3].cast("h")[0]
+            primitive = cm.primitive
             if primitive == 256:
                 ctx = context.previous
                 ctx.push(context.receiver)

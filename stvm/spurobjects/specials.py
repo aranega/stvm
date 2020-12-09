@@ -63,6 +63,12 @@ class Context(VariableSizedW):
         cm = self.compiled_method
         return self.stack[: cm.num_args]
 
+    def is_unwind(self):
+        return self[3].primitive == 198
+
+    def is_handler_or_signaling(self):
+        return self[3].primitive == 199
+
     def to_smalltalk_context(self, vm):
         return self
 
