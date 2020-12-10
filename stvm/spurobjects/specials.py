@@ -69,6 +69,10 @@ class Context(VariableSizedW):
     def is_handler_or_signaling(self):
         return self[3].primitive == 199
 
+    def terminate(self):
+        self.slots[0] = self.memory.nil
+        self.slots[1] = self.memory.nil
+
     def to_smalltalk_context(self, vm):
         return self
 

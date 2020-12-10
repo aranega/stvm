@@ -373,6 +373,18 @@ def suspend(process, context, vm):
     vm.suspend_active()
 
 
+@primitive(91)
+def test_display_depth(self, depth, context, vm):
+    print(f"[91] TODO test display depth {depth.value}, only return true")
+    return True
+
+
+@primitive(93)
+def register_input_semaphore(self, sema, context, vm):
+    # In cog version I checked in, it always fails
+    raise PrimitiveFail
+
+
 @primitive(101)
 def be_cursor(self, mask_form, context, vm):
     # mask    cursor_effect
@@ -485,6 +497,20 @@ def set_keycode(sensor, keycode, context, vm):
     vm.interrupt_keycode = keycode.value
 
 
+@primitive(134)
+def interrupt_semaphore(sensor, sema, context, vm):
+    memory = vm.memory
+    index = memory.special_array["interrupt_semaphore"]
+
+    if sema is memory.nil:
+        memory.special_object_oop[index] = nil
+        return
+    # if sema.in_young_space:
+    #   sema.is_remembered = True (+ change header, give a setter)
+    memory.special_object_array[index] = sema
+    memory.interrupt_semaphore = sema
+
+
 @primitive(135)
 def millisecond_clock(self, context, vm):
     ms = int(round(dt.now().timestamp() + 2177452800))
@@ -517,6 +543,11 @@ def get_system_attribute(self, index, context, vm):
     if index >= len(argv):
         return nil
     return to_bytestring(argv[index], vm)
+
+
+@primitive(165)
+def integer_array_at(array, i, context, vm):
+    return array[i.value - 1]
 
 
 @primitive(169)
@@ -562,6 +593,17 @@ def next_unwind_context_upto(self, upto, context, vm):
             return tmp
         tmp = tmp.sender
     return nil
+
+
+@primitive(196)
+def terminate_to(self, dest, context, vm):
+    if dest.sender:
+        ctx = self.sender
+        while ctx is not dest:
+            tmp = ctx.sender
+            ctx.terminate()
+            ctx = tmp
+    self.slots[0] = vm.memory.nil
 
 
 @primitive(197)

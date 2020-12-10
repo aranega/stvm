@@ -112,7 +112,7 @@ class PushLiteralVariable(object):
     def display(bytecode, context, vm, position=None, active=False):
         index = bytecode - 64
         association = context.compiled_method.literals[index]
-        return f"pushLitVar {association[0].display()}"
+        return f"pushLitVar #{association[0].as_text()} -> {association[1].display()}"
 
 
 @bytecode(range(96, 104))

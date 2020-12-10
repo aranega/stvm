@@ -161,12 +161,6 @@ class SpurObject(object):
             return f"{self[-1][6].as_text()} class"
 
     def display(self):
-        if self is self.memory.nil:
-            return "nil"
-        if self is self.memory.true:
-            return "true"
-        if self is self.memory.false:
-            return "false"
         return f"<0x{self.address:x} of {self.class_.name}>"
 
     def __len__(self):
@@ -175,7 +169,14 @@ class SpurObject(object):
 
 @spurobject(0)
 class ZeroSized(SpurObject):
-    ...
+    def display(self):
+        if self is self.memory.nil:
+            return "nil"
+        if self is self.memory.true:
+            return "true"
+        if self is self.memory.false:
+            return "false"
+        return super().display()
 
 
 @spurobject(1)

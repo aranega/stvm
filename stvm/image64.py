@@ -34,6 +34,7 @@ class SpurMemoryHandler(object):
         "timer_semaphore": 29,
         "special_symbols": 23,
         "process": 27,
+        "interrupt_semaphore": 30,
         "block_closure_class": 36,
         "largenegativeint": 42,
     }
