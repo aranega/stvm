@@ -225,25 +225,18 @@ class Indexable(SpurObject):
     indexable64 = 9
     _bits = [64, 32, 32, 16, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8]
     _shift = [0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
+    _formats = "QIIHHHHBBBBBBBB"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         shift = self.object_format - self.indexable64
         self.nb_bits = self._bits[shift]
         self.nb_empty_cases = self._shift[shift]
+        self.format = self._formats[shift]
+        self.slots = self.raw_slots.cast(self.format)
 
     def raw_at(self, index):
-        return int.from_bytes(self.raw_bytes_at(index), byteorder="little")
-
-    def effective_slice(self, index):
-        nbbits = self.nb_bits
-        line = (index // nbbits) * nbbits
-        offset = 8 // (64 // nbbits)
-        row = (index % nbbits) * offset
-        return slice(line + row, line + row + offset)
-
-    def raw_bytes_at(self, index):
-        return self.raw_slots[self.effective_slice(index)]
+        return self.slots[index]
 
     def __getitem__(self, index):
         return integer.create(self.raw_at(index), self.memory)
@@ -252,18 +245,15 @@ class Indexable(SpurObject):
         return (self[i] for i in range(len(self)))
 
     def __len__(self):
-        nbbytes = len(self.raw_slots) - self.nb_empty_cases
-        return nbbytes * 8 // self.nb_bits
+        return len(self.slots) - self.nb_empty_cases
 
     def __setitem__(self, index, value):
         t = type(value)
-        if t is int:
-            value = int.to_bytes(value, length=self.nb_bits // 8, byteorder="little")
-        elif t is integer:
-            value = int.to_bytes(value.value, length=self.nb_bits // 8, byteorder="little")
+        if t is integer:
+            value = value.value
         elif t is char:
-            value = int.to_bytes(ord(value.value), length=self.nb_bits // 8, byteorder="little")
-        self.raw_slots[self.effective_slice(index)] = value
+            value = ord(value.value)
+        self.slots[index] = value
 
     def as_text(self):
         raw_at = self.raw_at
