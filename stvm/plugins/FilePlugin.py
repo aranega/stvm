@@ -43,20 +43,21 @@ def primitiveFileOpen(cls, file_name, writable, context, vm):
             return vm.memory.nil
         mode = "rb"
     else:
-        mode = "rb+"
+        mode = "a+b"
     f = p.open(mode)
+    f.seek(0)
     fileno = f.fileno()
-    vm.opened_files[fileno] = f
+    vm.opened_files[fileno] = (p, f)
     return integer.create(fileno, vm.memory)
 
 
 def primitiveFileGetPosition(cls, fileno, context, vm):
-    f = vm.opened_files[fileno.value]
+    _, f = vm.opened_files[fileno.value]
     return large_or_small(f.tell(), vm)
 
 
 def primitiveFileWrite(f, fileno, string, start, count, context, vm):
-    f = vm.opened_files[fileno.value]
+    _, f = vm.opened_files[fileno.value]
     start = start.value - 1
     countv = count.value
     f.write(string.raw_slots[start:start + countv])
@@ -84,7 +85,7 @@ def primitiveDirectoryEntry(cls, path, name, context, vm):
 
 
 def primitiveFileRead(stream, fileno, dst, index, count, context, vm):
-    f = vm.opened_files[fileno.value]
+    _, f = vm.opened_files[fileno.value]
     nb_bytes = dst.nb_bits // 8
     index = index.value - 1
     count = count.value
@@ -92,3 +93,21 @@ def primitiveFileRead(stream, fileno, dst, index, count, context, vm):
     nb_read = len(buffer) // nb_bytes
     dst.raw_slots[:nb_read] = buffer
     return integer.create(nb_read, vm.memory)
+
+
+def primitiveHasFileAccess(*args, context, vm):
+    return False
+
+
+def primitiveFileDelete(self, path, context, vm):
+    f = Path(path.as_text())
+    try:
+        f.unlink()
+        return self
+    except FileNotFoundError:
+        return vm.memory.nil
+
+
+def primitiveFileAtEnd(self, fileno, context, vm):
+    p, f = vm.opened_files[fileno.value]
+    return f.tell() == p.stat().st_size
