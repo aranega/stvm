@@ -598,6 +598,17 @@ def immediate_asint(self, context, vm):
     return self.as_immediate_int()
 
 
+@primitive(173)
+def object_at(self, at, context, vm):
+    return self.slots[at.value - 1]
+
+
+@primitive(174)
+def object_at_put(self, at, value, context, vm):
+    self.slots[at.value - 1] = value
+    return value
+
+
 @primitive(175)
 def identity_hash(self, context, vm):
     return integer.create(self.identity_hash, vm.memory)
