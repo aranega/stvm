@@ -97,6 +97,7 @@ class ImmediateFloat(SpurObject):
         value = struct.unpack(">d", struct.pack(">Q", value))[0]
         self.value = value
         self.class_ = self.memory.smallfloat64
+        self.tab_repr = None
 
     @classmethod
     def create(cls, i, memory):
@@ -108,7 +109,11 @@ class ImmediateFloat(SpurObject):
         return memory.object_at(addr)
 
     def __getitem__(self, index):
-        raise TypeError(f"{self.__class__.__name__} don't have slots")
+        try:
+            return ImmediateInteger.create(self.tab_repr[index], self.memory)
+        except Exception:
+            self.tab_repr = struct.unpack(">II", struct.pack(">d", self.value))
+            return ImmediateInteger.create(self.tab_repr[index], self.memory)
 
     def __repr__(self):
         return f"{super().__repr__()}({self.value})"
