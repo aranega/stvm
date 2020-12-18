@@ -132,9 +132,9 @@ class STVMDebugger(Cmd):
     def do_continue(self, arg):
         """
         Continue execution. Currently, will stop when the execution is a little bit too long (too many bytecode are executed).
-        The limit is 1000000, but a new number can be passed as argument
+        The limit is 5000000, but a new number can be passed as argument
         """
-        limit = 1000000 if not arg else int(arg)
+        limit = 5000000 if not arg else int(arg)
         try:
             count = 0
             a = datetime.datetime.now()
