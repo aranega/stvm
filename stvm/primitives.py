@@ -36,7 +36,7 @@ def execute_primitive(number, context, vm, *args, **kwargs):
         return result
     except KeyError:
         unimpl.add(number)
-        print("** Unimplemented", sorted(unimpl))
+        # print("** Unimplemented", sorted(unimpl))
         if number in (19, 38, 65, 66, 77, 90, 91, 93, 94, 107, 108, 149, 159, 177, 195, 197, 198, 199):
             raise PrimitiveFail
         raise Exception(f"Missing primitive {number} called with [{', '.join(a.display() for a in args)}]")
@@ -414,9 +414,34 @@ def be_cursor(self, mask_form, context, vm):
 
 
 @primitive(102)
-def be_display(self, context, vm):
+def be_display(display, context, vm):
     # record object in special object array
-    vm.memory.special_object_array[14] = self
+    vm.memory.special_object_array[14] = display
+
+    # Create the display
+    displayBits = display[0]
+    width = display[1].value
+    height = display[2].value
+    depth = display[3].value
+    offset = display[4]
+    offsetX = offset[0].value
+    offsetY = offset[1].value
+
+    import pygame
+    pygame.init()
+    size = (width, height)
+    screen = pygame.display.set_mode(size)
+
+    # surface = pygame.Surface(size)
+    # pixelArray = pygame.PixelArray(surface)
+    # for y in range(height):
+    #     for x in range(width):
+    #         pixelArray[x, y] = displayBits[y * height + x].value
+    # del pixelArray
+    # screen.blit(surface, (offsetX, offsetY))
+    vm.screen = screen
+
+    pygame.display.update()
 
 
 @primitive(105)
@@ -484,6 +509,14 @@ def signal_at_byte_left(self, threasold, context, vm):
     print("""Tell the interpreter the low-space threshold in bytes. When the free
 	space falls below this threshold, the interpreter will signal the low-space
 	semaphore, if one has been registered.""")
+
+
+@primitive(126)
+def defer_screen_update(screen, defer, context, vm):
+    if defer is vm.memory.true:
+        vm.defer_screen_update = True
+    else:
+        vm.defer_screen_update = False
 
 
 @primitive(129)

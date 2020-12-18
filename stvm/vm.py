@@ -31,6 +31,8 @@ class VM(object):
         self.opened_files = {}
         self.last_hash = image.last_hash
         self.interrupt_keycode = 0
+        self.defer_screen_update = False
+        self.screen = None
 
     def add_last_link_list(self, link, linkedlist):
         if self.is_empty_list(linkedlist):
