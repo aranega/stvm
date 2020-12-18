@@ -9,6 +9,7 @@ pytest = "*"
 
 [packages]
 python-xlib = "*"
+pygame = "*"
 
 [requires]
 python_version = "3.9"
