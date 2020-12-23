@@ -5,7 +5,7 @@ from ..primitives import PrimitiveFail
 
 
 def primitiveCopyBits(self, context, vm):
-    print("Buggy implementation of copybits")
+    print("Unexsting implementation of copybits")
     try:
         dst = self[0][0]
         src = self[1][0]
@@ -14,18 +14,18 @@ def primitiveCopyBits(self, context, vm):
         width = self[6].value
         height = self[7].value
 
-        import pygame
-        screen = vm.screen
-        surface = pygame.Surface((width, height))
-        pixelArray = pygame.PixelArray(surface)
-
-        for y in range(height):
-            for x in range(width):
-                pixelArray[x, y] = src[y * height + x].value
-
-        del pixelArray
-        screen.blit(surface, (destX, destY))
-        pygame.display.flip()
+        # import pygame
+        # screen = vm.screen
+        # surface = pygame.Surface((width, height))
+        # pixelArray = pygame.PixelArray(surface)
+        #
+        # for y in range(height):
+        #     for x in range(width):
+        #         pixelArray[x, y] = src[y * height + x].value
+        #
+        # del pixelArray
+        # screen.blit(surface, (destX, destY))
+        # pygame.display.flip()
     except Exception:
         ...
 

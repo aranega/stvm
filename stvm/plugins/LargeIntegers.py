@@ -1,3 +1,4 @@
+from math import ceil
 from ..spurobjects import ImmediateInteger as integer
 from ..utils import *
 
@@ -78,7 +79,7 @@ def large_or_small(value, vm):
 
 
 def large(r, neg, vm):
-    length = len(hex(r)) - 2
+    length = ceil((len(hex(r)) - 2) / 2)
     if neg:
         r = -r
         result = vm.allocate(vm.memory.largenegativeint, data_len=length)

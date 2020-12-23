@@ -1,5 +1,6 @@
 from .primitives import execute_primitive, PrimitiveFail
 from .spurobjects import ImmediateInteger as integer
+from .utils import DoesNotUnderstand
 
 
 class ByteCodeMap(object):
@@ -351,7 +352,7 @@ class PushOperationLongForm(object):
         else:   # receiver variable
             label += f"FromRcvrVar {index}"
             if active:
-                val = cm.receiver[index]
+                val = context.receiver[index]
                 val = f"val={val.display()}"
         return f"{label} {val}"
 
@@ -420,9 +421,12 @@ class SingleExtendSend(object):
         args.reverse()
         receiver = context.pop()
 
-        compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
-        new_context.stack[:nb_args] = args
+        try:
+            compiled_method = vm.lookup(receiver.class_, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+            new_context.stack[:nb_args] = args
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, receiver.class_, selector, args)
         context.pc += 2
         new_context.previous = context
         vm.current_context = new_context
@@ -535,9 +539,12 @@ class SuperSend(object):
         args.reverse()
         receiver = context.pop()
 
-        compiled_method = vm.lookup(superclass, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
-        new_context.stack[:nb_args] = args
+        try:
+            compiled_method = vm.lookup(superclass, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+            new_context.stack[:nb_args] = args
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, superclass, selector, args)
         context.pc += 2
         new_context.previous = context
         vm.current_context = new_context
@@ -569,9 +576,12 @@ class SecondExtendSend(object):
         args.reverse()
         receiver = context.pop()
 
-        compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
-        new_context.stack[:nb_args] = args
+        try:
+            compiled_method = vm.lookup(receiver.class_, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+            new_context.stack[:nb_args] = args
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, receiver.class_, selector, args)
         context.pc += 2
         new_context.previous = context
         vm.current_context = new_context
@@ -923,9 +933,12 @@ class SendSpecialMessage(object):
             args.append(context.pop())
         args.reverse()
         receiver = context.pop()
-        compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
-        new_context.stack[:nb_params] = args
+        try:
+            compiled_method = vm.lookup(receiver.class_, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+            new_context.stack[:nb_params] = args
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, receiver.class_, selector, args)
         context.pc += 1
         new_context.previous = context
         vm.current_context = new_context
@@ -957,8 +970,11 @@ class Send0ArgSelector(object):
         index = bytecode - 208
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
-        compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
+        try:
+            compiled_method = vm.lookup(receiver.class_, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, receiver.class_, selector, [])
         context.pc += 1
         new_context.previous = context
         vm.current_context = new_context
@@ -983,9 +999,12 @@ class Send1ArgSelector(object):
         arg0 = context.pop()
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
-        compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
-        new_context.stack[0] = arg0
+        try:
+            compiled_method = vm.lookup(receiver.class_, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+            new_context.stack[0] = arg0
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, receiver.class_, selector, [arg0])
         context.pc += 1
         new_context.previous = context
         vm.current_context = new_context
@@ -1013,10 +1032,13 @@ class Send2ArgSelector(object):
         arg0 = context.pop()
         receiver = context.pop()
         selector = context.compiled_method.literals[index]
-        compiled_method = vm.lookup(receiver.class_, selector)
-        new_context = context.__class__(receiver, compiled_method, vm.memory)
-        new_context.stack[0] = arg0
-        new_context.stack[1] = arg1
+        try:
+            compiled_method = vm.lookup(receiver.class_, selector)
+            new_context = context.__class__(receiver, compiled_method, vm.memory)
+            new_context.stack[0] = arg0
+            new_context.stack[1] = arg1
+        except DoesNotUnderstand:
+            new_context = vm.dnu_context(receiver, receiver.class_, selector, [arg0, arg1])
         context.pc += 1
         new_context.previous = context
         vm.current_context = new_context

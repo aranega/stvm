@@ -9,20 +9,14 @@ SMALLINT_MAX = 1152921504606846975
 SMALLINT_MIN = -1152921504606846976
 
 
-# def build_largepositiveint(value, vm):
-#     cls = vm.memory.largepositiveint
-#     size = (value.bit_length() + 7) // 8
-#     array_size = (size//(8 + 1)) + 1
-#     inst = vm.allocate(cls, array_size=array_size)
-#     byte_array = value.to_bytes(size, byteorder='little')
-#     inst.raw_slots[:array_size] = byte_array
-#     return inst
+class DoesNotUnderstand(Exception):
+    ... # TODO move me
 
 
 def large_or_small(r, vm):
     if SMALLINT_MIN <= r <= SMALLINT_MAX:
         return integer.create(r, vm.memory)
-    length = len(hex(r)) - 2
+    length = ceil((len(hex(r)) - 2) / 2)
     rb = int.to_bytes(r, byteorder="little", length=length)
     if r < 0:
         result = vm.allocate(vm.memory.largenegativeint, array_size=length)

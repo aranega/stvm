@@ -7,6 +7,7 @@ from .utils import *
 from .spurobjects import ImmediateInteger as integer
 from .spurobjects import ImmediateFloat as smallfloat
 from .spurobjects import ImmediateChar as char
+from .utils import DoesNotUnderstand
 
 
 nil = object()
@@ -343,9 +344,24 @@ def store_stackp(self, new_stackp, context, vm):
 
 @primitive(83, activate=True)
 def perform(rcvr, selector, *args, context, vm):
-    method = vm.lookup(rcvr.class_, selector)
-    new_context = context.__class__(rcvr, method, vm.memory)
-    new_context.stack[:len(args)] = args
+    try:
+        method = vm.lookup(rcvr.class_, selector)
+        new_context = context.__class__(rcvr, method, vm.memory)
+        new_context.stack[:len(args)] = args
+    except DoesNotUnderstand:
+        new_context = vm.dnu_context(rcvr.class_, selector, args)
+    new_context.previous = context.previous
+    return new_context
+
+
+@primitive(84, activate=True)
+def perform_with_args(rcvr, selector, *args, context, vm):
+    try:
+        method = vm.lookup(rcvr.class_, selector)
+        new_context = context.__class__(rcvr, method, vm.memory)
+        new_context.stack[:len(args)] = args
+    except DoesNotUnderstand:
+        new_context = vm.dnu_context(rcvr.class_, selector, args)
     new_context.previous = context.previous
     return new_context
 
@@ -441,7 +457,7 @@ def be_display(display, context, vm):
     # screen.blit(surface, (offsetX, offsetY))
     vm.screen = screen
 
-    pygame.display.update()
+    # pygame.display.update()
 
 
 @primitive(105)
@@ -517,6 +533,15 @@ def defer_screen_update(screen, defer, context, vm):
         vm.defer_screen_update = True
     else:
         vm.defer_screen_update = False
+
+
+@primitive(127)
+def show_display_rect(self, left, right, top, bottom, context, vm):
+    left = left.value
+    right = right.value
+    top = top.value
+    bottom = bottom.value
+    raise PrimitiveFail   # TODO ?
 
 
 @primitive(129)
@@ -619,6 +644,28 @@ def max_identity_hash(self, context, vm):
     return integer.create(0x3FFFFF, vm.memory)
 
 
+@primitive(186)
+def enter_criticalsection(self, *args, context, vm):
+    import ipdb; ipdb.set_trace()
+
+    if args:
+        critical_section = args[0]
+        active_process = self
+    else:
+        critical_section = self
+        active_process = vm.active_process
+    owning_process = critical_section[2]
+    if owning_process is vm.memory.nil:
+        ...  # TODO remember criticalSection if required
+        critical_section[2] = active_process
+        return False
+    if owning_process == active_process:
+        return True
+    vm.add_last_link(active_process, critical_section)
+    vm.suspend_active()
+    return False
+
+
 @primitive(188)
 def execute_method_argsarray(receiver, args_array, method, context, vm):
     import ipdb; ipdb.set_trace()
@@ -706,6 +753,12 @@ def context_at(ctx, at, context, vm):
 def context_at_put(ctx, at, val, context, vm):
     ctx.stack[at.value - 1] = val
     return val
+
+
+@primitive(231)
+def force_display_update(self, context, vm):
+    # vm.screen.update()
+    ...
 
 
 @primitive(240)

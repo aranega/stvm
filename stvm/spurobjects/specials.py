@@ -1,6 +1,7 @@
-from .objects import VariableSizedW, SpurObject
+from .objects import VariableSizedW, SpurObject, FixedSized
 from .immediate import ImmediateInteger as integer
 
+MESSAGE_CLASS = 35
 CONTEXT_CLASS = 36
 CLOSURE_CLASS = 37
 FULLCLOSURE_CLASS = 38
@@ -161,6 +162,33 @@ class BlockClosure(VariableSizedW):
 
     def basic_at(self, i):
         return self.slots[i]
+
+
+@spurobject(1, class_index=MESSAGE_CLASS)
+class Message(FixedSized):
+    @property
+    def selector(self):
+        return self[0]
+
+    @property
+    def args(self):
+        return self[1]
+
+    @property
+    def lookup_class(self):
+        return self[2]
+
+    @selector.setter
+    def selector(self, s):
+        self[0] = s
+
+    @args.setter
+    def args(self, array):
+        self[1] = array
+
+    @lookup_class.setter
+    def lookup_class(self, lookup):
+        self[2] = lookup
 
 
 # @spurobject(1, class_index=SEMAPHORE_CLASS)

@@ -5,6 +5,7 @@ from .image64 import Image
 from .spurobjects.objects import *
 from .spurobjects import ImmediateInteger as integer
 from .bytecodes import ByteCodeMap
+from .utils import DoesNotUnderstand
 
 
 class VM(object):
@@ -146,7 +147,6 @@ class VM(object):
         process = self.active_process
         context = process[1]
         return context.adapt_context()
-        # return VMContext.from_smalltalk_context(context, self)
 
     def check_interrupts(self):
         memory = self.memory
@@ -163,8 +163,8 @@ class VM(object):
         return self.current_context.fetch_bytecode()
 
     def fetch(self):
-        self.check_process_switch()
-        self.check_interrupts()
+        # self.check_process_switch()
+        # self.check_interrupts()
         return self.low_fetch()
 
     def decode_execute(self, bytecode):
@@ -191,9 +191,21 @@ class VM(object):
             except ValueError:
                 # deal with super classes
                 cls = cls[0]
-        # raise DebugException(f"Method {selector.as_text()} not found in {original_class.display()}")
-        # import ipdb; ipdb.set_trace()
-        return self.lookup(original_class, self.memory.dnuSelector)
+        raise DoesNotUnderstand(f"Method {selector.as_text()} not found in {original_class.display()}")
+
+    def dnu_context(self, rcvr, cls, selector, args):
+        dnu = self.lookup(cls, self.memory.dnuSelector)
+        memory = self.memory
+        message = self.allocate(memory.message)
+        message.lookup_class = cls
+        message.selector = selector
+        array = self.allocate(memory.array, array_size=len(args))
+        for i, arg in enumerate(args):
+            array[i] = arg
+        message.args = array
+        new_context = VMContext(rcvr, dnu, memory)
+        new_context.stack[0] = message
+        return new_context
 
     def allocate(self, stclass, array_size=0, data_len=0):
         return self.allocator.allocate(stclass, array_size, data_len)

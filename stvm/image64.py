@@ -28,6 +28,8 @@ class SpurMemoryHandler(object):
         "context_class": 10,
         "point": 12,
         "largepositiveint": 13,
+        "message": 15,
+        "compiled_method_class": 16,
         "semaphore": 18,
         "character": 19,
         "dnuSelector": 20,
