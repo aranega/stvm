@@ -198,6 +198,14 @@ class VM(object):
     def allocate(self, stclass, array_size=0, data_len=0):
         return self.allocator.allocate(stclass, array_size, data_len)
 
+    def main(self):
+        main_instance = self.memory.special_object_array[56]
+        description = main_instance[0]
+        main_method = main_instance[1]
+        new_context = VMContext(main_instance, main_method, self.memory)
+        new_context._previous = self.memory.nil
+        self.current_context = new_context
+
 
 class DebugException(Exception):
     ...

@@ -16,6 +16,11 @@ class STVMDebugger(Cmd):
         self.vm = vm
         self.cmdqueue = ['stack', 'list']
 
+    def do_load_main(self, arg):
+        print("!! Loading main from main instance in the special object array")
+        self.vm.main()
+        self.cmdqueue = ['stack', 'list']
+
     def do_untilswith(self, arg):
         """
         Runs the VM until a process switch is performed (disabled)
@@ -424,7 +429,7 @@ class STVMDebugger(Cmd):
             indic = f"{colors.reset}{colors.fg.purple} "
             if context is current:
                 indic = f"{colors.bold}*"
-            line += f"{i:3} {indic}   #{selector} rcvr={context.receiver.display()}"
+            line += f"{hex(id(context))} {i:3} {indic}   #{selector} rcvr={context.receiver.display()}"
             # line += f"        {context.display()}"
             print(line)
             context = context.sender
